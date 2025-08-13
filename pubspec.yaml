@@ -1,0 +1,67 @@
+name: seven_chat_app
+description: An AI app from the Seventh-day Adventist Church.
+
+version: 1.0.0+2
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # http
+  dio: ^5.8.0+1
+
+  # flutter
+  flutter_modular: ^6.3.4
+
+  # firebase
+  firebase_core: ^3.14.0
+  firebase_auth: ^5.6.2
+  firebase_analytics: ^11.6.0
+  cloud_firestore: ^5.6.12
+
+  # auth's
+  google_sign_in: ^7.1.0
+  sign_in_with_apple: ^7.0.1
+  flutter_facebook_auth: ^7.1.2
+
+  # storage
+  flutter_secure_storage: ^9.2.4
+  localstorage: ^5.0.0
+
+  # utils
+  cupertino_icons: ^1.0.2
+  shared_preferences: ^2.5.3
+  connectivity_plus: ^6.1.4
+  timeago: ^3.7.1
+  transparent_image: ^2.0.1
+  vibration: ^3.1.3
+  
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+    
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - lib/ui/assets/images/
+    - lib/ui/assets/images/logo/
+    - lib/ui/assets/images/social/
+    - lib/ui/assets/images/countries/
+    - lib/ui/assets/images/icons/
+
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: lib/ui/assets/fonts/Poppins/Poppins-regular.ttf
+          weight: 400
+        - asset: lib/ui/assets/fonts/Poppins/Poppins-medium.ttf
+          weight: 500
+        - asset: lib/ui/assets/fonts/Poppins/Poppins-semibold.ttf
+          weight: 600
+        - asset: lib/ui/assets/fonts/Poppins/Poppins-bold.ttf
+          weight: 700
