@@ -34,7 +34,7 @@ class AppDrawer extends StatelessWidget {
             //_buildMenuItems(context),
             _buildConversationsSection(context),
             _buildConversationHistory(),
-            const Spacer(),
+            //const Spacer(),
             _buildBottomActions(context),
           ],
         ),
@@ -261,14 +261,16 @@ class AppDrawer extends StatelessWidget {
     // FUTURO: Lista das conversas recentes
     final conversations = [];
 
-    if (conversations.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      child: Column(
-        children: conversations
-            .map((conversation) => _buildConversationItem(conversation))
-            .toList(),
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(top: 16),
+        child: ListView.builder(
+          padding: EdgeInsets.zero,
+          itemCount: conversations.length,
+          itemBuilder: (context, index) {
+            return _buildConversationItem(conversations[index]);
+          },
+        ),
       ),
     );
   }
