@@ -228,20 +228,6 @@ class ChatRepository
     }
   }
 
-  Future<List<MessageModel>> _loadMessagesFromCache(
-      String conversationId) async {
-    try {
-      final cacheString =
-          await localStorage.fetch('$_messagesPrefix$conversationId');
-      if (cacheString == null || cacheString.isEmpty) {
-        return [];
-      }
-      return MessageModel.fromCacheString(cacheString);
-    } catch (_) {
-      return [];
-    }
-  }
-
   Future<void> _saveConversationsToCache(
       List<ConversationModel> conversations) async {
     await localStorage.save(
@@ -254,16 +240,6 @@ class ChatRepository
     final cached = await _loadConversationsFromCache();
     cached.insert(0, conversation); // Adiciona no início
     await _saveConversationsToCache(cached);
-  }
-
-  Future<void> _addMessageToCache(
-      String conversationId, MessageModel message) async {
-    final cached = await _loadMessagesFromCache(conversationId);
-    cached.add(message);
-    await localStorage.save(
-      key: '$_messagesPrefix$conversationId',
-      value: MessageModel.listToCacheString(cached),
-    );
   }
 
   Future<void> _updateConversationInCache(
@@ -313,15 +289,6 @@ class ChatRepository
           name: 'ChatRepository');
       throw DomainError.networkError;
     }
-  }
-
-  Future<List<MessageEntity>> _fetchMessagesFromFirestore({
-    required String conversationId,
-    int limit = 30,
-    String? startAfter,
-  }) async {
-    // TODO: Implementar busca de mensagens do Firestore
-    return [];
   }
 
   // Método síncrono para salvar no Firestore
@@ -426,11 +393,6 @@ class ChatRepository
           name: 'ChatRepository');
       throw DomainError.unexpected;
     }
-  }
-
-  Future<void> _updateMessageInCache(
-      String conversationId, MessageModel message) async {
-    await messagesRepository.updateMessageInCache(conversationId, message);
   }
 
   Future<bool> _shouldSync() async {

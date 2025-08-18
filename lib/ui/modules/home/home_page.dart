@@ -482,7 +482,7 @@ class _HomePageState extends State<HomePage>
         _autoScrollEnabled = false;
       });
 
-      LoggerService.debug('🤚 Usuário tomou controle do scroll',
+      LoggerService.debug('Usuário tomou controle do scroll',
           name: 'ScrollControl');
 
       // Timer para reabilitar auto-scroll se usuário voltar ao final
@@ -511,7 +511,7 @@ class _HomePageState extends State<HomePage>
         _userIsScrolling = false;
         _autoScrollEnabled = true;
       });
-      LoggerService.debug('✅ Auto-scroll reabilitado (usuário no final)',
+      LoggerService.debug('Auto-scroll reabilitado (usuário no final)',
           name: 'ScrollControl');
     }
   }
