@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -5,13 +7,14 @@ import 'package:seven_chat_app/domain/entities/entities.dart';
 
 import '../../../domain/entities/chat/chat.dart';
 import '../../../main/routes_app.dart';
+import '../../../main/services/logger_service.dart';
 import '../../../presentation/presenters/chat/chat_presenter.dart';
 import '../../../presentation/presenters/home/home_presenter.dart';
 import '../../../share/ds/ds_logo.dart';
 import '../../../share/utils/app_colors.dart';
 import '../../components/components.dart';
 import '../../helpers/helpers.dart';
-import '../chat/widgets/widgets.dart';
+import 'widgets/widgets.dart';
 
 class HomePage extends StatefulWidget {
   final HomePresenter presenter;
@@ -37,6 +40,12 @@ class _HomePageState extends State<HomePage>
   bool isTyping = false;
   bool isKeyboardVisible = false;
   bool isInChatMode = false;
+  final bool _shouldScrollToNewMessage = false;
+
+  // VARIÁVEIS PARA CONTROLE DE SCROLL
+  bool _userIsScrolling = false;
+  bool _autoScrollEnabled = true;
+  Timer? _scrollDebounceTimer;
 
   @override
   void initState() {
@@ -86,6 +95,9 @@ class _HomePageState extends State<HomePage>
       });
       _updateVisibility();
     });
+
+    // 🚀 LISTENER PARA DETECTAR SCROLL MANUAL DO USUÁRIO
+    _scrollController.addListener(_onScrollChanged);
   }
 
   void _tryLoadCachedSuggestions() {
@@ -144,6 +156,8 @@ class _HomePageState extends State<HomePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scrollDebounceTimer?.cancel();
+    _scrollController.removeListener(_onScrollChanged);
     _controller.dispose();
     _focusNode.dispose();
     _animationController.dispose();
@@ -168,6 +182,9 @@ class _HomePageState extends State<HomePage>
   void _handleSendMessage() {
     final message = _controller.text.trim();
     if (message.isEmpty) return;
+
+    // FECHA O TECLADO IMEDIATAMENTE
+    _focusNode.unfocus();
 
     // ENTRA NO MODO CHAT
     setState(() {
@@ -224,16 +241,6 @@ class _HomePageState extends State<HomePage>
     if (arguments?['shouldReloadUser'] == true) {
       widget.presenter.loadCurrentUser();
     }
-  }
-
-  // Abrir uma mensagem do histórico de conversas
-  void _openExistingConversation(String conversationId) {
-    Modular.to.pushNamed(
-      Routes.chat,
-      arguments: {
-        'conversationId': conversationId,
-      },
-    );
   }
 
   @override
@@ -343,56 +350,81 @@ class _HomePageState extends State<HomePage>
                   return const SizedBox.shrink();
                 }
 
-                // Auto-scroll quando há mudanças
+                // 🚀 SÓ FAZ AUTO-SCROLL SE PERMITIDO
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (snapshot.hasData ||
-                      isThinking ||
-                      (isTyping && typingText.isNotEmpty)) {
+                  if (_autoScrollEnabled &&
+                      !_shouldScrollToNewMessage &&
+                      (snapshot.hasData ||
+                          isThinking ||
+                          (isTyping && typingText.isNotEmpty))) {
                     _scrollToBottom();
                   }
                 });
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  // Conta mensagens + indicadores ativos
-                  itemCount: messages.length +
-                      (isThinking ? 1 : 0) +
-                      (isTyping && typingText.isNotEmpty ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    // Mensagens normais
-                    if (index < messages.length) {
-                      final message = messages[index];
-                      final isLastMessage = index == messages.length - 1;
+                return Stack(
+                  children: [
+                    ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      // Conta mensagens + indicadores ativos
+                      itemCount: messages.length +
+                          (isThinking ? 1 : 0) +
+                          (isTyping && typingText.isNotEmpty ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        // Mensagens normais
+                        if (index < messages.length) {
+                          final message = messages[index];
+                          final isLastMessage = index == messages.length - 1;
 
-                      return MessageBubble(
-                        message: message,
-                        isLastMessage: isLastMessage,
-                      );
-                    }
+                          return MessageBubble(
+                            message: message,
+                            isLastMessage: isLastMessage,
+                          );
+                        }
 
-                    // Indicador de "pensando" logo após a última mensagem
-                    if (isThinking && index == messages.length) {
-                      return const ThinkingIndicator();
-                    }
+                        // Indicador de "pensando" logo após a última mensagem
+                        if (isThinking && index == messages.length) {
+                          return const ThinkingIndicator();
+                        }
 
-                    // Indicador de "digitando" após o "pensando" ou mensagens
-                    if (isTyping && typingText.isNotEmpty) {
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 0, vertical: 8),
-                        child: TypingIndicator(
-                          text: typingText,
-                          onComplete: () {
-                            _scrollToBottom();
-                          },
+                        // Indicador de "digitando" após o "pensando" ou mensagens
+                        if (isTyping && typingText.isNotEmpty) {
+                          return Container(
+                            margin: const EdgeInsets.symmetric(
+                                horizontal: 0, vertical: 8),
+                            child: TypingIndicator(
+                              text: typingText,
+                              onComplete: () {
+                                _scrollToBottom();
+                              },
+                            ),
+                          );
+                        }
+
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                    // BOTÃO FLUTUANTE "VOLTAR AO FINAL"
+                    if (!_autoScrollEnabled && _userIsScrolling)
+                      Positioned(
+                        bottom: 16,
+                        right: 16,
+                        child: AnimatedOpacity(
+                          opacity: _userIsScrolling ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 300),
+                          child: FloatingActionButton.small(
+                            onPressed: _jumpToBottom,
+                            backgroundColor: AppColors.lightBlue,
+                            child: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
                         ),
-                      );
-                    }
-
-                    return const SizedBox.shrink();
-                  },
+                      ),
+                  ],
                 );
               },
             );
@@ -403,12 +435,84 @@ class _HomePageState extends State<HomePage>
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+    if (!_scrollController.hasClients || !_autoScrollEnabled) {
+      LoggerService.debug('Auto-scroll desabilitado', name: 'ScrollControl');
+      return;
+    }
+
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  // MÉTODO PARA USUÁRIO FORÇAR IR AO FINAL
+  void _jumpToBottom() {
+    if (!_scrollController.hasClients) return;
+
+    // Força ir ao final e reabilita auto-scroll
+    setState(() {
+      _userIsScrolling = false;
+      _autoScrollEnabled = true;
+    });
+
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
+    );
+
+    LoggerService.debug('Usuário forçou ir ao final', name: 'ScrollControl');
+  }
+
+  // DETECTA QUANDO USUÁRIO FAZ SCROLL MANUAL
+  void _onScrollChanged() {
+    if (!_scrollController.hasClients) return;
+
+    final currentPosition = _scrollController.offset;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final isAtBottom =
+        (maxScroll - currentPosition) < 100; // 100px de tolerância
+
+    // Se usuário scrollou para cima (não está no final), desabilita auto-scroll
+    if (!isAtBottom && _autoScrollEnabled) {
+      setState(() {
+        _userIsScrolling = true;
+        _autoScrollEnabled = false;
+      });
+
+      LoggerService.debug('🤚 Usuário tomou controle do scroll',
+          name: 'ScrollControl');
+
+      // Timer para reabilitar auto-scroll se usuário voltar ao final
+      _scrollDebounceTimer?.cancel();
+      _scrollDebounceTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted && _scrollController.hasClients) {
+          final currentMax = _scrollController.position.maxScrollExtent;
+          final currentPos = _scrollController.offset;
+          final stillAtBottom = (currentMax - currentPos) < 100;
+
+          if (stillAtBottom) {
+            setState(() {
+              _userIsScrolling = false;
+              _autoScrollEnabled = true;
+            });
+            LoggerService.debug('✅ Auto-scroll reabilitado',
+                name: 'ScrollControl');
+          }
+        }
+      });
+    }
+
+    // Se usuário scrollou até o final, reabilita auto-scroll imediatamente
+    else if (isAtBottom && !_autoScrollEnabled) {
+      setState(() {
+        _userIsScrolling = false;
+        _autoScrollEnabled = true;
+      });
+      LoggerService.debug('✅ Auto-scroll reabilitado (usuário no final)',
+          name: 'ScrollControl');
     }
   }
 

@@ -55,9 +55,13 @@ class DifyService implements SendToDify {
         body: request.toJson(),
       );
 
+      //yield* _handleBlockingResponse(response);
+
       if (response is String) {
         // Usa o streaming real do Dify
-        yield* _handleRealDifyStreaming(response, conversationId);
+        //yield* _handleRealDifyStreaming(response, conversationId);
+
+        yield* _handleStreamingWithLocalSimulation(response, conversationId);
       }
     } catch (error, stackTrace) {
       LoggerService.error(
@@ -76,115 +80,100 @@ class DifyService implements SendToDify {
     }
   }
 
-  // Processa o streaming real do Dify linha por linha e
-  // retorna resposta + metadata
-  Stream<DifyStreamResponse> _handleRealDifyStreaming(
+  Stream<DifyStreamResponse> _handleStreamingWithLocalSimulation(
       String sseData, String localConversationId) async* {
-    String accumulatedAnswer = '';
+    String fullAnswer = '';
     String? difyConversationId;
     String? difyMessageId;
 
     try {
+      // 🚀 PRIMEIRO: PROCESSA Todo O STREAMING PARA PEGAR RESPOSTA COMPLETA
       final lines = sseData.split('\n');
-
-      LoggerService.debug('Processando ${lines.length} linhas SSE',
-          name: 'DifyService');
 
       for (final line in lines) {
         if (line.startsWith('data: ')) {
           final jsonString = line.substring(6).trim();
-
-          // Pula linhas vazias ou marcador de fim
-          if (jsonString.isEmpty || jsonString == '[DONE]') {
-            continue;
-          }
+          if (jsonString.isEmpty || jsonString == '[DONE]') continue;
 
           try {
             final json = jsonDecode(jsonString);
             final event = json['event'] as String?;
             final answer = json['answer'] as String?;
-            final conversationId = json['conversation_id'] as String?;
-            final messageId = json['message_id'] as String?;
 
-            // Captura e salva o conversation_id do Dify
-            if (conversationId != null && conversationId.isNotEmpty) {
-              difyConversationId = conversationId;
-              _conversationCache[localConversationId] = conversationId;
-
-              LoggerService.debug(
-                  'Conversation ID do Dify salvo: $conversationId',
-                  name: 'DifyService');
-            }
-
-            // Captura e salva o messageId do Dify
-            if (messageId != null && messageId.isNotEmpty) {
-              difyMessageId = messageId;
-
-              LoggerService.debug('Message Id do Dify salvo: $messageId',
-                  name: 'DifyService');
-            }
-
-            LoggerService.debug('Evento: $event, Answer: "$answer"',
-                name: 'DifyService');
-
-            // processa apenas agent_message com answer
+            // Acumula resposta
             if (event == 'agent_message' && answer != null) {
-              // Adiciona o pedaço da resposta ao texto acumulado
-              accumulatedAnswer += answer;
-
-              LoggerService.debug(
-                  'Texto acumulado: "${accumulatedAnswer.length} chars"',
-                  name: 'DifyService');
-
-              // Yield resposta parcial SEM metadata (para UI)
-              yield DifyStreamResponse(
-                content: accumulatedAnswer,
-                isComplete: false,
-                metadata: null,
-              );
-
-              // *******: Delay para controlar velocidade
-              await Future.delayed(const Duration(milliseconds: 30));
+              fullAnswer += answer;
             }
 
-            // finaliza quando recebe message_end
-            else if (event == 'message_end') {
-              LoggerService.debug('Stream finalizado - message_end recebido',
-                  name: 'DifyService');
-
-              // Yield resposta final COM metadata
-              yield DifyStreamResponse(
-                content: accumulatedAnswer,
-                isComplete: true,
-                metadata: DifyMetadata(
-                  conversationId: difyConversationId,
-                  messageId: difyMessageId,
-                ),
-              );
-              break;
+            // Salva metadados
+            if (json['conversation_id'] != null) {
+              difyConversationId = json['conversation_id'];
+              _conversationCache[localConversationId] = difyConversationId!;
             }
+            if (json['message_id'] != null) {
+              difyMessageId = json['message_id'];
+            }
+
+            // Para no final
+            if (event == 'message_end') break;
           } catch (parseError) {
-            LoggerService.debug('Erro ao parsear linha SSE: $parseError',
-                name: 'DifyService');
-            continue; // Ignora linhas mal formadas
+            continue;
           }
         }
       }
 
-      // verifica se recebeu alguma resposta
-      if (accumulatedAnswer.isEmpty) {
-        LoggerService.error('Nenhuma resposta válida recebida do Dify',
-            name: 'DifyService');
-        throw DomainError.unexpected;
+      // 🚀 SEGUNDO: SIMULA DIGITAÇÃO COM A RESPOSTA COMPLETA
+      if (fullAnswer.isNotEmpty) {
+        yield* _simulateTypingFromCompleteResponse(
+          fullAnswer,
+          difyConversationId,
+          difyMessageId,
+        );
       }
-
-      LoggerService.debug(
-          'Streaming real concluído: "${accumulatedAnswer.length} chars"',
-          name: 'DifyService');
     } catch (error) {
-      LoggerService.error('Erro no streaming real: $error',
+      LoggerService.error('Erro no streaming com simulação: $error',
           name: 'DifyService');
       throw DomainError.unexpected;
+    }
+  }
+
+  // Simula digitação da resposta completa
+  Stream<DifyStreamResponse> _simulateTypingFromCompleteResponse(
+    String fullText,
+    String? difyConversationId,
+    String? difyMessageId,
+  ) async* {
+    // Configura simulação
+    const int wordsPerUpdate = 5; // 5 palavras por vez
+    const int delayMs = 200; // 150ms entre updates
+
+    final words = fullText.split(' ');
+    String currentText = '';
+
+    for (int i = 0; i < words.length; i += wordsPerUpdate) {
+      final endIndex = (i + wordsPerUpdate).clamp(0, words.length);
+      final wordBatch = words.sublist(i, endIndex);
+
+      if (currentText.isNotEmpty) currentText += ' ';
+      currentText += wordBatch.join(' ');
+
+      final isComplete = endIndex >= words.length;
+
+      yield DifyStreamResponse(
+        content: currentText,
+        isComplete: isComplete,
+        metadata: isComplete
+            ? DifyMetadata(
+                conversationId: difyConversationId,
+                messageId: difyMessageId,
+              )
+            : null,
+      );
+
+      // Delay entre updates (exceto no último)
+      if (!isComplete) {
+        await Future.delayed(const Duration(milliseconds: delayMs));
+      }
     }
   }
 
@@ -204,47 +193,6 @@ class DifyService implements SendToDify {
   // Getter para debug do cache
   static Map<String, String> get conversationCache =>
       Map.unmodifiable(_conversationCache);
-
-  // Fallback para resposta blocking
-  Stream<String> _handleBlockingResponse(dynamic response) async* {
-    try {
-      final Map<String, dynamic> json = response as Map<String, dynamic>;
-      final difyResponse = DifyResponseModel.fromJson(json);
-
-      if (difyResponse.isError) {
-        throw Exception('Dify Error: ${difyResponse.answer}');
-      }
-
-      if (difyResponse.answer != null && difyResponse.answer!.isNotEmpty) {
-        // Para resposta blocking, simula o efeito de digitação
-        yield* _simulateTypingEffect(difyResponse.answer!);
-      } else {
-        throw DomainError.unexpected;
-      }
-    } catch (error) {
-      LoggerService.error(
-        'Erro ao processar resposta blocking: $error',
-        name: 'DifyService',
-      );
-      throw DomainError.unexpected;
-    }
-  }
-
-  // apenas para fallback blocking - simula digitação
-  Stream<String> _simulateTypingEffect(String fullResponse) async* {
-    const int typingSpeed = 50; // ms por caractere
-    String currentText = '';
-
-    for (int i = 0; i < fullResponse.length; i++) {
-      currentText += fullResponse[i];
-      yield currentText;
-
-      // Delay entre caracteres (só para fallback)
-      if (i < fullResponse.length - 1) {
-        await Future.delayed(const Duration(milliseconds: typingSpeed));
-      }
-    }
-  }
 
   // Métodos de teste
   Future<bool> testConnection() async {

@@ -206,26 +206,27 @@ class StreamChatPresenter
         userId: userId,
       )
           .listen(
-        (difyResponse) {
+        (difyStreamResponse) {
           // e primeira resposta, para o "pensando" e inicia "digitando"
-          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
+          if (_isThinking && difyStreamResponse.content.trim().isNotEmpty) {
             _stopThinkingState();
             _startTypingEffect();
           }
 
           LoggerService.debug(
-              '🟢 Recebendo resposta: ${difyResponse.content.substring(0, 50)}...',
+              '🟢 Recebendo resposta: ${difyStreamResponse.content.substring(0, 50)}...',
               name: 'ChatPresenter');
 
-          fullResponse = difyResponse.content;
+          fullResponse = difyStreamResponse.content;
 
           // Só envia para o stream se não está mais pensando
           if (!_isThinking) {
-            _typingTextController.sink.add(difyResponse.content);
+            _typingTextController.sink.add(difyStreamResponse.content);
           }
 
-          if (difyResponse.isComplete && difyResponse.metadata != null) {
-            finalMetadata = difyResponse.metadata;
+          if (difyStreamResponse.isComplete &&
+              difyStreamResponse.metadata != null) {
+            finalMetadata = difyStreamResponse.metadata;
           }
         },
         onDone: () async {
