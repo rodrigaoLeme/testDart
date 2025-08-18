@@ -275,6 +275,7 @@ class AppDrawer extends StatelessWidget {
 
   Widget _buildConversationItem(String title) {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Material(
         color: Colors.transparent,
@@ -292,8 +293,8 @@ class AppDrawer extends StatelessWidget {
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontFamily: 'Poppins',
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
               overflow: TextOverflow.ellipsis,
             ),
