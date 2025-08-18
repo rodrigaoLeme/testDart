@@ -58,6 +58,10 @@ class StreamChatPresenter
   bool _isThinking = false;
   StreamSubscription? _difyStreamSubscription;
 
+  // Controle da sessão anônima
+  bool _isAnonymousSession = false;
+  String? _anonymousSessionId;
+
   // Getters
   @override
   Stream<List<MessageEntity>> get messagesStream => _messagesController.stream;
@@ -84,7 +88,7 @@ class StreamChatPresenter
   @override
   bool get isThinking => _isThinking;
 
-  // LOAD CONVERSATION EXISTENTE
+  // LOAD CONVERSATION EXISTENTE (apenas usuários logados)
   @override
   Future<void> loadConversation(String conversationId) async {
     try {
@@ -132,29 +136,58 @@ class StreamChatPresenter
       // Busca usuário atual
       final currentUser = await _loadCurrentUser.load();
       if (currentUser == null) {
-        throw DomainError.accessDenied;
+        // USUÁRIO ANÔNIMO
+        LoggerService.debug(
+          'Usuário não logado - criando sessão anônima',
+          name: 'ChatPresenter',
+        );
+
+        _isAnonymousSession = true;
+        _anonymousSessionId = 'anonymous-mobile';
+
+        // Cria conversa temporária em memória
+        _currentConversation = ConversationEntity(
+            id: _anonymousSessionId!,
+            userId: _anonymousSessionId!,
+            title: 'Chat Anônimo',
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            lastMessage: firstMessage,
+            messageCount: 0);
+
+        _conversationController.sink.add(_currentConversation);
+
+        // Limpa mensagens anteriores
+        _cachedMessages = [];
+        _messagesController.sink.add(_cachedMessages);
+
+        // Envia primeira mensagem anônima
+        await _sendAnonymousMessage(firstMessage);
+      } else {
+        // USUÁRIO LOGADO
+        _isAnonymousSession = false;
+
+        // Cria nova conversa
+        final conversation = await _createConversation.create(
+          userId: currentUser.id,
+          firstMessage: firstMessage,
+        );
+
+        _currentConversation = conversation;
+        _conversationController.sink.add(conversation);
+
+        // Limpa mensagens e envia a primeira
+        _cachedMessages = [];
+        _messagesController.sink.add(_cachedMessages);
+
+        // Envia primeira mensagem
+        await sendMessage(firstMessage);
+
+        LoggerService.debug(
+          'Nova conversa criada: ${conversation.id}',
+          name: 'ChatPresenter',
+        );
       }
-
-      // Cria nova conversa
-      final conversation = await _createConversation.create(
-        userId: currentUser.id,
-        firstMessage: firstMessage,
-      );
-
-      _currentConversation = conversation;
-      _conversationController.sink.add(conversation);
-
-      // Limpa mensagens e envia a primeira
-      _cachedMessages = [];
-      _messagesController.sink.add(_cachedMessages);
-
-      // Envia primeira mensagem
-      await sendMessage(firstMessage);
-
-      LoggerService.debug(
-        'Nova conversa criada: ${conversation.id}',
-        name: 'ChatPresenter',
-      );
     } catch (error) {
       isLoading = LoadingData(isLoading: false);
       LoggerService.error(
@@ -170,13 +203,108 @@ class StreamChatPresenter
   Future<void> sendMessage(String content) async {
     if (content.trim().isEmpty || _currentConversation == null) return;
 
+    // Se é sessão anônima, usa fluxo diferente
+    if (_isAnonymousSession) {
+      await _sendAnonymousMessage(content);
+      return;
+    }
+
+    // Fluxo normal para usuários logados
+    await _sendAuthenticatedMessage(content);
+  }
+
+  // Envio de mensagem anônima (apenas em memória)
+  Future<void> _sendAnonymousMessage(String content) async {
     try {
       LoggerService.debug(
-        'Enviando mensagem: ${content.length > 20 ? content.substring(0, 20) : content}...',
+        'Enviando mensagem anônima: ${content.length > 20 ? content.substring(0, 20) : content}...',
         name: 'ChatPresenter',
       );
 
-      // 1. Adiciona mensagem do usuário
+      // 1. Cria mensagem do usuário em memória
+      final userMessage = MessageEntity(
+        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+        conversationId: _anonymousSessionId!,
+        content: content.trim(),
+        type: MessageType.user,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sent,
+      );
+
+      _cachedMessages.add(userMessage);
+      _messagesController.sink.add(List.from(_cachedMessages));
+
+      // 2. Inicia estado "pensando"
+      _startThinkingState();
+
+      // 3. Envia para Dify com ID anônimo
+      String fullResponse = '';
+      DifyMetadata? finalMetadata;
+
+      _difyStreamSubscription?.cancel();
+      _difyStreamSubscription = _sendToDify
+          .sendMessage(
+        message: content.trim(),
+        conversationId: _anonymousSessionId!,
+        userId: _anonymousSessionId!,
+      )
+          .listen(
+        (difyResponse) {
+          // Se é primeira resposta, para o "pensando" e inicia "digitando"
+          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
+            _stopThinkingState();
+            _startTypingEffect();
+          }
+
+          LoggerService.debug(
+              'Recebendo resposta anônima: ${difyResponse.content.substring(0, 50)}...',
+              name: 'ChatPresenter');
+
+          fullResponse = difyResponse.content;
+
+          // Só envia para o stream se não está mais pensando
+          if (!_isThinking) {
+            _typingTextController.sink.add(difyResponse.content);
+          }
+
+          if (difyResponse.isComplete && difyResponse.metadata != null) {
+            finalMetadata = difyResponse.metadata;
+          }
+        },
+        onDone: () async {
+          LoggerService.debug('Stream anônimo finalizado',
+              name: 'ChatPresenter');
+
+          await _completeAnonymousAssistantMessage(fullResponse, finalMetadata);
+        },
+        onError: (error) {
+          LoggerService.error('🔴 Erro no stream anônimo: $error',
+              name: 'ChatPresenter');
+          _stopThinkingState();
+          _stopTypingEffect();
+          _handleError(error);
+        },
+      );
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao enviar mensagem anônima: $error',
+        name: 'ChatPresenter',
+      );
+      _stopThinkingState();
+      _stopTypingEffect();
+      _handleError(error);
+    }
+  }
+
+  // Mensagem autenticada
+  Future<void> _sendAuthenticatedMessage(String content) async {
+    try {
+      LoggerService.debug(
+        'Enviando mensagem autenticada: ${content.length > 20 ? content.substring(0, 20) : content}...',
+        name: 'ChatPresenter',
+      );
+
+      // 1. Adiciona mensagem do usuário no Firebase
       final userMessage = await _sendMessage.send(
         conversationId: _currentConversation!.id,
         content: content.trim(),
@@ -186,13 +314,12 @@ class StreamChatPresenter
       _cachedMessages.add(userMessage);
       _messagesController.sink.add(List.from(_cachedMessages));
 
-      // 2. Inicia estado "pensando" antes do Dify
+      // 2. Inicia estado "pensando"
       _startThinkingState();
 
       // 3. Busca o user ID real
       final currentUser = await _loadCurrentUser.load();
-      final userId = currentUser?.id ??
-          'anonymous-${DateTime.now().millisecondsSinceEpoch}';
+      final userId = currentUser?.id ?? 'anonymous-user';
 
       // Variáveis para capturar dados do Dify
       String fullResponse = '';
@@ -206,31 +333,28 @@ class StreamChatPresenter
         userId: userId,
       )
           .listen(
-        (difyStreamResponse) {
-          // e primeira resposta, para o "pensando" e inicia "digitando"
-          if (_isThinking && difyStreamResponse.content.trim().isNotEmpty) {
+        (difyResponse) {
+          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
             _stopThinkingState();
             _startTypingEffect();
           }
 
           LoggerService.debug(
-              '🟢 Recebendo resposta: ${difyStreamResponse.content.substring(0, 50)}...',
+              'Recebendo resposta: ${difyResponse.content.substring(0, 50)}...',
               name: 'ChatPresenter');
 
-          fullResponse = difyStreamResponse.content;
+          fullResponse = difyResponse.content;
 
-          // Só envia para o stream se não está mais pensando
           if (!_isThinking) {
-            _typingTextController.sink.add(difyStreamResponse.content);
+            _typingTextController.sink.add(difyResponse.content);
           }
 
-          if (difyStreamResponse.isComplete &&
-              difyStreamResponse.metadata != null) {
-            finalMetadata = difyStreamResponse.metadata;
+          if (difyResponse.isComplete && difyResponse.metadata != null) {
+            finalMetadata = difyResponse.metadata;
           }
         },
         onDone: () async {
-          LoggerService.debug('🟢 Stream finalizado, salvando resposta',
+          LoggerService.debug('Stream finalizado, salvando resposta',
               name: 'ChatPresenter');
 
           await _completeAssistantMessage(fullResponse, finalMetadata);
@@ -250,6 +374,41 @@ class StreamChatPresenter
       );
       _stopThinkingState();
       _stopTypingEffect();
+      _handleError(error);
+    }
+  }
+
+  // Completa mensagem do assistente anônimo
+  Future<void> _completeAnonymousAssistantMessage(
+    String fullResponse,
+    DifyMetadata? metadata,
+  ) async {
+    try {
+      _stopTypingEffect();
+
+      if (fullResponse.trim().isEmpty) {
+        throw DomainError.unexpected;
+      }
+
+      // Cria mensagem do assistente em memória
+      final assistantMessage = MessageEntity(
+        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+        conversationId: _anonymousSessionId!,
+        content: fullResponse.trim(),
+        type: MessageType.assistant,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sent,
+        metadata: metadata!.toMap(),
+      );
+
+      _cachedMessages.add(assistantMessage);
+      _messagesController.sink.add(List.from(_cachedMessages));
+
+      LoggerService.debug('Resposta anônima completa adicionada',
+          name: 'ChatPresenter');
+    } catch (error) {
+      LoggerService.error('Erro ao completar mensagem anônima: $error',
+          name: 'ChatPresenter');
       _handleError(error);
     }
   }
@@ -403,6 +562,10 @@ class StreamChatPresenter
     // Para efeito de digitação
     _stopThinkingState();
     _stopTypingEffect();
+
+    // Limpa flags de sessão anônima
+    _isAnonymousSession = false;
+    _anonymousSessionId = null;
 
     LoggerService.debug('Conversa atual limpa', name: 'ChatPresenter');
   }
