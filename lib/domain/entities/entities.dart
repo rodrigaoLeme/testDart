@@ -1,4 +1,5 @@
 export './account/account.dart';
+export './chat/chat.dart';
 export './faq/faq.dart';
 export './login/login.dart';
 export './menu/menu.dart';

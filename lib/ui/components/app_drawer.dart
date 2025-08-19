@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:seven_chat_app/main/services/logger_service.dart';
 import 'package:seven_chat_app/ui/components/user_menu_button.dart';
 
 import '../../domain/entities/entities.dart';
 import '../../main/routes_app.dart';
+import '../../presentation/presenters/home/home_presenter.dart';
 import '../../share/utils/app_colors.dart';
 import '../helpers/helpers.dart';
 import 'drawer_language_button.dart';
@@ -12,10 +14,14 @@ import 'drawer_language_button.dart';
 class AppDrawer extends StatelessWidget {
   final UserEntity? currentUser;
   final VoidCallback? onNewConversation;
+  final Function(String)? onOpenConversation;
+  final HomePresenter? homePresenter;
   const AppDrawer({
     super.key,
     this.currentUser,
     this.onNewConversation,
+    this.onOpenConversation,
+    this.homePresenter,
   });
 
   @override
@@ -258,24 +264,37 @@ class AppDrawer extends StatelessWidget {
   }
 
   Widget _buildConversationHistory() {
-    // FUTURO: Lista das conversas recentes
-    final conversations = [];
+    if (homePresenter == null) {
+      return const SizedBox.shrink();
+    }
 
     return Expanded(
-      child: Container(
-        margin: const EdgeInsets.only(top: 16),
-        child: ListView.builder(
-          padding: EdgeInsets.zero,
-          itemCount: conversations.length,
-          itemBuilder: (context, index) {
-            return _buildConversationItem(conversations[index]);
-          },
-        ),
-      ),
+      child: StreamBuilder<List<ConversationEntity>>(
+          stream: homePresenter!.conversationsStream,
+          initialData: homePresenter!.conversations,
+          builder: (context, snapshot) {
+            final conversations = snapshot.data ?? [];
+
+            if (conversations.isEmpty) {
+              return const SizedBox();
+            }
+
+            return Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                physics: const BouncingScrollPhysics(),
+                itemCount: conversations.length,
+                itemBuilder: (context, index) {
+                  return _buildConversationItem(conversations[index]);
+                },
+              ),
+            );
+          }),
     );
   }
 
-  Widget _buildConversationItem(String title) {
+  Widget _buildConversationItem(ConversationEntity conversation) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -284,14 +303,18 @@ class AppDrawer extends StatelessWidget {
         child: InkWell(
           onTap: () {
             HapticFeedback.selectionClick();
-            // FUTURO: Abrir conversa específica
-            // onOpenConversation?.call(conversationId);
+            onOpenConversation?.call(conversation.id);
+          },
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            // mostrar opções (deletar, renomear, etc)
+            _showConversationOptions(conversation);
           },
           borderRadius: BorderRadius.circular(8),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text(
-              title,
+              conversation.title,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontFamily: 'Poppins',
@@ -381,5 +404,13 @@ class AppDrawer extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showConversationOptions(ConversationEntity conversation) {
+    // TODO: @rodrigo.leme Implementar modal com opções
+    // - Deletar conversa
+    // - Renomear conversa
+    // - Exportar conversa
+    LoggerService.debug('Chamando long press na conversa', name: 'appDrawer');
   }
 }

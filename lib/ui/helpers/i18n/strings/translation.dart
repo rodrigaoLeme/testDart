@@ -205,4 +205,5 @@ abstract class Translation {
   String get homeMessage;
   String get messageWarning;
   String get messagePlaceholder;
+  String get noTitleChat;
 }

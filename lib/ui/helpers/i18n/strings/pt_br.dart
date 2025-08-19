@@ -155,4 +155,6 @@ class PtBr implements Translation {
   @override
   String get webContextCancelled =>
       'Processo de autenticação cancelado pelo usuário';
+  @override
+  String get noTitleChat => 'Conversa sem título';
 }

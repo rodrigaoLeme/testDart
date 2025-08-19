@@ -156,4 +156,6 @@ class Es implements Translation {
   @override
   String get webContextCancelled =>
       'Proceso de autenticación cancelado por el usuario';
+  @override
+  String get noTitleChat => 'Conversación sin título';
 }

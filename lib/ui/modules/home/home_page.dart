@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:seven_chat_app/domain/entities/entities.dart';
 
-import '../../../domain/entities/chat/chat.dart';
 import '../../../main/routes_app.dart';
 import '../../../main/services/logger_service.dart';
 import '../../../presentation/presenters/chat/chat_presenter.dart';
@@ -195,8 +194,21 @@ class _HomePageState extends State<HomePage>
     // PROCESSA MENSAGEM VIA CHAT PRESENTER
     if (widget.chatPresenter.currentConversation == null) {
       widget.chatPresenter.createNewConversation(message);
+
+      // Quando a conversa for criada, atualiza o histórico
+      widget.chatPresenter.currentConversationStream.listen((conversation) {
+        if (conversation != null) {
+          widget.presenter.addNewConversation(conversation);
+        }
+      });
     } else {
       widget.chatPresenter.sendMessage(message);
+
+      // Atualiza conversa existente no histórico
+      final currentConversation = widget.chatPresenter.currentConversation;
+      if (currentConversation != null) {
+        widget.presenter.updateConversation(currentConversation);
+      }
     }
 
     _controller.clear();
@@ -260,7 +272,9 @@ class _HomePageState extends State<HomePage>
             backgroundColor: AppColors.blue,
             drawer: AppDrawer(
               currentUser: currentUser,
+              homePresenter: widget.presenter,
               onNewConversation: startNewConversation,
+              onOpenConversation: _openExistingConversation,
             ),
             onDrawerChanged: (isOpened) {
               if (!isOpened) {
@@ -430,6 +444,19 @@ class _HomePageState extends State<HomePage>
             );
           },
         );
+      },
+    );
+  }
+
+  void _openExistingConversation(String conversationId) {
+    // Fecha o drawer
+    Navigator.of(context).pop();
+
+    // Navega para a página de chat com a conversa específica
+    Modular.to.pushNamed(
+      Routes.home,
+      arguments: {
+        'conversationId': conversationId,
       },
     );
   }

@@ -152,4 +152,6 @@ class Us implements Translation {
   String get tooManyRequests => 'Too many login attempts. Try again later';
   @override
   String get webContextCancelled => 'Authentication process canceled by user';
+  @override
+  String get noTitleChat => 'Untitled conversation';
 }
