@@ -29,20 +29,31 @@ class DifyService implements SendToDify {
     String? userId,
   }) async* {
     try {
+      LoggerService.debug(
+        'Dify: Recebido - conversationId: "$conversationId", userId: "$userId", message: "${message.substring(0, 10)}"',
+        name: 'DifyService',
+      );
+
       LoggerService.debug('Dify: Enviando mensagem...', name: 'DifyService');
 
       // Busca o conversation_id do Dify se já existe
       final difyConversationId = _conversationCache[conversationId] ?? '';
 
       LoggerService.debug(
-          'ConversationId local: $conversationId, Dify: $difyConversationId',
-          name: 'DifyService');
+        'Cache check - Local ID: "$conversationId" → Dify ID: "${difyConversationId.isEmpty ? "VAZIO" : difyConversationId}"',
+        name: 'DifyService',
+      );
 
       final request = DifyRequestModel(
         query: message,
         user: userId ?? 'user-${DateTime.now().millisecondsSinceEpoch}',
         conversationId: difyConversationId,
         responseMode: true,
+      );
+
+      LoggerService.debug(
+        'Request para Dify: ${json.encode(request.toJson())}',
+        name: 'DifyService',
       );
 
       final response = await httpClient.request(

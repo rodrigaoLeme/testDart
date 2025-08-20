@@ -68,7 +68,10 @@ class StreamLoginPresenter
     navigateTo = NavigationData(
       route: Routes.home,
       clear: true,
-      arguments: {'shouldReloadUser': true},
+      arguments: {
+        'shouldReloadUser': true,
+        'justLoggedIn': true,
+      },
     );
   }
 

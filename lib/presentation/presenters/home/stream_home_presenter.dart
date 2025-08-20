@@ -25,6 +25,8 @@ class StreamHomePresenter implements HomePresenter {
   final StreamController<List<ConversationEntity>> _conversationsController =
       StreamController<List<ConversationEntity>>.broadcast();
 
+  UserEntity? _currentUser;
+
   // Cache local
   List<ConversationEntity> _cachedConversations = [];
   Timer? _syncTimer;
@@ -52,14 +54,57 @@ class StreamHomePresenter implements HomePresenter {
   Future<void> loadCurrentUser() async {
     try {
       final user = await _loadCurrentUserUseCase.load();
+
+      // Guarda referência do usuário anterior
+      final previousUser = _currentUser;
+      _currentUser = user;
+
       _currentUserController.sink.add(user);
 
-      // usuário logado carrega conversas
-      if (user != null) {
+      // CENÁRIO 1: Usuário fez login (não tinha usuário, agora tem)
+      if (previousUser == null && user != null) {
+        LoggerService.debug(
+          'Usuário logou: ${user.id} - Carregando conversas...',
+          name: 'HomePresenter',
+        );
         await loadConversations();
       }
-    } catch (_) {
+
+      // CENÁRIO 2: Usuário fez logout (tinha usuário, agora não tem)
+      if (previousUser != null && user == null) {
+        LoggerService.debug(
+          'Usuário deslogou - Limpando conversas...',
+          name: 'HomePresenter',
+        );
+        _clearConversations();
+      }
+
+      // CENÁRIO 3: Usuário já estava logado (refresh)
+      if (previousUser != null && user != null && previousUser.id == user.id) {
+        LoggerService.debug(
+          'Refresh do usuário atual - Mantendo conversas',
+          name: 'HomePresenter',
+        );
+        // Não precisa recarregar conversas
+      }
+
+      // CENÁRIO 4: Mudou de usuário (logout + login diferente)
+      if (previousUser != null && user != null && previousUser.id != user.id) {
+        LoggerService.debug(
+          'Mudança de usuário: ${previousUser.id} -> ${user.id}',
+          name: 'HomePresenter',
+        );
+        _clearConversations();
+        await loadConversations();
+      }
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao carregar usuário: $error',
+        name: 'HomePresenter',
+      );
+      _currentUser = null;
       _currentUserController.sink.add(null);
+      _clearConversations();
     }
   }
 
@@ -76,8 +121,18 @@ class StreamHomePresenter implements HomePresenter {
   @override
   Future<void> loadConversations() async {
     try {
+      // Verifica se tem usuário antes de carregar
+      if (_currentUser == null) {
+        LoggerService.debug(
+          'Sem usuário logado - não carrega conversas',
+          name: 'HomePresenter',
+        );
+        _clearConversations();
+        return;
+      }
+
       LoggerService.debug(
-        'HomePresenter: Carregando conversas...',
+        'Carregando conversas para usuário: ${_currentUser!.id}',
         name: 'HomePresenter',
       );
 
@@ -156,6 +211,18 @@ class StreamHomePresenter implements HomePresenter {
     _conversationsController.sink.add(List.from(_cachedConversations));
   }
 
+  // Limpa conversas (usado no logout)
+  void _clearConversations() {
+    LoggerService.debug(
+      'Limpando histórico de conversas',
+      name: 'HomePresenter',
+    );
+
+    _cachedConversations = [];
+    _conversationsController.sink.add([]);
+    _syncTimer?.cancel();
+  }
+
   // quando atualizar uma conversa
   @override
   void updateConversation(ConversationEntity conversation) {
@@ -226,6 +293,30 @@ class StreamHomePresenter implements HomePresenter {
     }
 
     return false;
+  }
+
+  // chamado após login bem-sucedido
+  Future<void> onUserLogin() async {
+    LoggerService.debug(
+      'onUserLogin chamado - recarregando dados do usuário',
+      name: 'HomePresenter',
+    );
+
+    // Recarrega usuário e conversas
+    await loadCurrentUser();
+    // loadConversations será chamado automaticamente se usuário foi carregado
+  }
+
+  // chamado após logout
+  void onUserLogout() {
+    LoggerService.debug(
+      'onUserLogout chamado - limpando dados',
+      name: 'HomePresenter',
+    );
+
+    _currentUser = null;
+    _currentUserController.sink.add(null);
+    _clearConversations();
   }
 
   void dispose() {

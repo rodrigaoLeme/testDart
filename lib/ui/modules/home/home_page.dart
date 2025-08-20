@@ -46,6 +46,11 @@ class _HomePageState extends State<HomePage>
   bool _autoScrollEnabled = true;
   Timer? _scrollDebounceTimer;
 
+  // ignore: unused_field
+  StreamSubscription<UserEntity?>? _userSubscription;
+  UserEntity? _previousUser;
+  String? _conversationIdToLoad;
+
   @override
   void initState() {
     super.initState();
@@ -95,8 +100,11 @@ class _HomePageState extends State<HomePage>
       _updateVisibility();
     });
 
-    // 🚀 LISTENER PARA DETECTAR SCROLL MANUAL DO USUÁRIO
+    // Listner para detestar o scroll manual
     _scrollController.addListener(_onScrollChanged);
+
+    // Escuta mudanças no usuário
+    _listenToUserChanges();
   }
 
   void _tryLoadCachedSuggestions() {
@@ -110,6 +118,37 @@ class _HomePageState extends State<HomePage>
           widget.presenter.loadSuggestions();
         }
       });
+    });
+  }
+
+  // Escuta mudanças de autenticação
+  void _listenToUserChanges() {
+    _userSubscription = widget.presenter.currentUserStream.listen((user) {
+      // Se não tinha usuário e agora tem (login)
+      if (_previousUser == null && user != null) {
+        LoggerService.debug(
+          'Usuário fez login, carregando histórico...',
+          name: 'HomePage',
+        );
+
+        // Carrega histórico de conversas
+        widget.presenter.loadConversations();
+      }
+
+      // Se tinha usuário e agora não tem (logout)
+      if (_previousUser != null && user == null) {
+        LoggerService.debug(
+          'Usuário fez logout, limpando histórico...',
+          name: 'HomePage',
+        );
+
+        // Limpa o chat atual se houver
+        widget.chatPresenter.clearCurrentConversation();
+
+        // O histórico será limpo automaticamente pelo presenter
+      }
+
+      _previousUser = user;
     });
   }
 
@@ -161,6 +200,7 @@ class _HomePageState extends State<HomePage>
     _focusNode.dispose();
     _animationController.dispose();
     _scrollController.dispose();
+    _userSubscription?.cancel();
     super.dispose();
   }
 
@@ -185,26 +225,50 @@ class _HomePageState extends State<HomePage>
     // FECHA O TECLADO IMEDIATAMENTE
     _focusNode.unfocus();
 
+    LoggerService.debug(
+      'HomePage: Enviando mensagem - ConversationID: ${widget.chatPresenter.currentConversation?.id}',
+      name: 'HomePage',
+    );
+
     // ENTRA NO MODO CHAT
     setState(() {
       isInChatMode = true;
       isTyping = false;
     });
 
-    // PROCESSA MENSAGEM VIA CHAT PRESENTER
-    if (widget.chatPresenter.currentConversation == null) {
+    // Se tem uma conversa carregada do histórico
+    if (_conversationIdToLoad != null &&
+        widget.chatPresenter.currentConversation != null) {
+      LoggerService.debug(
+        'HomePage: Enviando em conversa existente: $_conversationIdToLoad',
+        name: 'HomePage',
+      );
+      // Envia mensagem na conversa existente
+      widget.chatPresenter.sendMessage(message);
+
+      // Atualiza conversa no histórico
+      final currentConversation = widget.chatPresenter.currentConversation;
+      if (currentConversation != null) {
+        widget.presenter.updateConversation(currentConversation);
+      }
+    }
+    // Se não tem conversa (nova conversa)
+    else if (widget.chatPresenter.currentConversation == null) {
       widget.chatPresenter.createNewConversation(message);
 
-      // Quando a conversa for criada, atualiza o histórico
+      // Escuta quando a conversa for criada
       widget.chatPresenter.currentConversationStream.listen((conversation) {
         if (conversation != null) {
           widget.presenter.addNewConversation(conversation);
+          _conversationIdToLoad = conversation.id; // Salva o ID
         }
       });
-    } else {
+    }
+    // Conversa já existe
+    else {
       widget.chatPresenter.sendMessage(message);
 
-      // Atualiza conversa existente no histórico
+      // Atualiza conversa no histórico
       final currentConversation = widget.chatPresenter.currentConversation;
       if (currentConversation != null) {
         widget.presenter.updateConversation(currentConversation);
@@ -233,6 +297,7 @@ class _HomePageState extends State<HomePage>
     setState(() {
       isInChatMode = false;
       isTyping = false;
+      _conversationIdToLoad = null;
     });
 
     // LIMPA CHAT PRESENTER
@@ -252,6 +317,15 @@ class _HomePageState extends State<HomePage>
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (arguments?['shouldReloadUser'] == true) {
       widget.presenter.loadCurrentUser();
+
+      // Força carregamento de conversas após login
+      widget.presenter.loadConversations();
+    }
+
+    // Verifica se deve carregar uma conversa específica
+    if (arguments?['conversationId'] != null) {
+      final conversationId = arguments!['conversationId'] as String;
+      _loadExistingConversation(conversationId);
     }
   }
 
@@ -452,13 +526,36 @@ class _HomePageState extends State<HomePage>
     // Fecha o drawer
     Navigator.of(context).pop();
 
-    // Navega para a página de chat com a conversa específica
-    Modular.to.pushNamed(
-      Routes.home,
-      arguments: {
-        'conversationId': conversationId,
-      },
+    _loadExistingConversation(conversationId);
+  }
+
+  // Carrega conversa existente
+  void _loadExistingConversation(String conversationId) {
+    LoggerService.debug(
+      'Carregando conversa existente: $conversationId',
+      name: 'HomePage',
     );
+
+    // Entra no modo chat
+    setState(() {
+      isInChatMode = true;
+      isTyping = false;
+      _conversationIdToLoad = conversationId;
+    });
+
+    // Carrega a conversa no ChatPresenter
+    widget.chatPresenter.loadConversation(conversationId);
+
+    // Scroll para o final após carregar mensagens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _scrollToBottom() {

@@ -104,16 +104,33 @@ class StreamChatPresenter
       _cachedMessages = messages;
       _messagesController.sink.add(messages);
 
-      // TODO: Carregar dados da conversa também
-      // final conversation = await _loadConversation.load(conversationId);
-      // _currentConversation = conversation;
-      // _conversationController.sink.add(conversation);
+      final currentUser = await _loadCurrentUser.load();
+
+      _currentConversation = ConversationEntity(
+        id: conversationId,
+        userId: currentUser?.id ?? 'anonymous-mobile',
+        title: _extractTitleFromMessages(messages),
+        createdAt:
+            messages.isNotEmpty ? messages.first.timestamp : DateTime.now(),
+        updatedAt:
+            messages.isNotEmpty ? messages.last.timestamp : DateTime.now(),
+        lastMessage: messages.isNotEmpty ? messages.last.content : '',
+        messageCount: messages.length,
+      );
+
+      _conversationController.sink.add(_currentConversation);
+
+      _isAnonymousSession = false;
+      _anonymousSessionId = null;
 
       isLoading = LoadingData(isLoading: false);
       LoggerService.debug(
         'Conversa carregada: ${messages.length} mensagens',
         name: 'ChatPresenter',
       );
+
+      _isAnonymousSession = false;
+      _anonymousSessionId = null;
     } catch (error) {
       isLoading = LoadingData(isLoading: false);
       LoggerService.error(
@@ -155,7 +172,7 @@ class StreamChatPresenter
             lastMessage: firstMessage,
             messageCount: 0);
 
-        _conversationController.sink.add(_currentConversation);
+        //_conversationController.sink.add(_currentConversation);
 
         // Limpa mensagens anteriores
         _cachedMessages = [];
@@ -201,7 +218,21 @@ class StreamChatPresenter
   // Send Message
   @override
   Future<void> sendMessage(String content) async {
-    if (content.trim().isEmpty || _currentConversation == null) return;
+    if (content.trim().isEmpty) return;
+
+    if (_currentConversation == null) {
+      LoggerService.info(
+        'sendMessage chamado sem conversa atual - criando nova',
+        name: 'ChatPresenter',
+      );
+      await createNewConversation(content);
+      return;
+    }
+
+    LoggerService.debug(
+      'Enviando mensagem na conversa: ${_currentConversation!.id}',
+      name: 'ChatPresenter',
+    );
 
     // Se é sessão anônima, usa fluxo diferente
     if (_isAnonymousSession) {
@@ -320,6 +351,11 @@ class StreamChatPresenter
       // 3. Busca o user ID real
       final currentUser = await _loadCurrentUser.load();
       final userId = currentUser?.id ?? 'anonymous-user';
+
+      LoggerService.debug(
+        'Enviando para Dify - ConversationID: ${_currentConversation!.id}, UserID: $userId',
+        name: 'ChatPresenter',
+      );
 
       // Variáveis para capturar dados do Dify
       String fullResponse = '';
@@ -568,6 +604,21 @@ class StreamChatPresenter
     _anonymousSessionId = null;
 
     LoggerService.debug('Conversa atual limpa', name: 'ChatPresenter');
+  }
+
+  // Método que retorna título das mensagens
+  String _extractTitleFromMessages(List<MessageEntity> messages) {
+    if (messages.isEmpty) return 'Conversa';
+
+    // Procura primeira mensagem do usuário
+    final firstUserMessage = messages.firstWhere(
+      (m) => m.type == MessageType.user,
+      orElse: () => messages.first,
+    );
+
+    final content = firstUserMessage.content;
+    // Limita o título a 50 caracteres
+    return content.length > 50 ? '${content.substring(0, 47)}...' : content;
   }
 
   void dispose() {
