@@ -40,7 +40,7 @@ class DifyService implements SendToDify {
       final difyConversationId = _conversationCache[conversationId] ?? '';
 
       LoggerService.debug(
-        'Cache check - Local ID: "$conversationId" → Dify ID: "${difyConversationId.isEmpty ? "VAZIO" : difyConversationId}"',
+        'Cache check - Local ID: "$conversationId" → Dify ID: "${difyConversationId.isEmpty ? "NOVA CONVERSA" : difyConversationId}"',
         name: 'DifyService',
       );
 
@@ -118,8 +118,16 @@ class DifyService implements SendToDify {
 
             // Salva metadados
             if (json['conversation_id'] != null) {
-              difyConversationId = json['conversation_id'];
-              _conversationCache[localConversationId] = difyConversationId!;
+              var conversationId = json['conversation_id'];
+              if (conversationId != null && conversationId.isNotEmpty) {
+                difyConversationId = conversationId;
+                _conversationCache[localConversationId] = conversationId;
+
+                LoggerService.debug(
+                  'Cache atualizado - Local: $localConversationId → Dify: $conversationId',
+                  name: 'DifyService',
+                );
+              }
             }
             if (json['message_id'] != null) {
               difyMessageId = json['message_id'];
@@ -245,5 +253,15 @@ class DifyService implements SendToDify {
           name: 'DifyService');
       return null;
     }
+  }
+
+  // restaurar cache de uma conversa
+  static void restoreConversationCache(
+      String localConversationId, String difyConversationId) {
+    _conversationCache[localConversationId] = difyConversationId;
+    LoggerService.debug(
+      'Cache restaurado - Local: $localConversationId → Dify: $difyConversationId',
+      name: 'DifyService',
+    );
   }
 }

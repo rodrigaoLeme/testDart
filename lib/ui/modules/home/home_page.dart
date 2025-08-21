@@ -536,11 +536,16 @@ class _HomePageState extends State<HomePage>
       name: 'HomePage',
     );
 
+    // Limpa qualquer conversa anterior
+    widget.chatPresenter.clearCurrentConversation();
+
     // Entra no modo chat
-    setState(() {
-      isInChatMode = true;
-      isTyping = false;
-      _conversationIdToLoad = conversationId;
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setState(() {
+        isInChatMode = true;
+        isTyping = false;
+        _conversationIdToLoad = conversationId;
+      });
     });
 
     // Carrega a conversa no ChatPresenter

@@ -106,6 +106,25 @@ class StreamChatPresenter
 
       final currentUser = await _loadCurrentUser.load();
 
+      String? difyConversationId;
+
+      for (final message in messages.reversed) {
+        if (message.type == MessageType.assistant &&
+            message.metadata['dify_conversation_id'] != null) {
+          difyConversationId =
+              message.metadata['dify_conversation_id'] as String;
+
+          DifyService.restoreConversationCache(
+              conversationId, difyConversationId);
+
+          LoggerService.debug(
+            'Dify conversation ID recuperado do histórico: $difyConversationId',
+            name: 'ChatPresenter',
+          );
+          break;
+        }
+      }
+
       _currentConversation = ConversationEntity(
         id: conversationId,
         userId: currentUser?.id ?? 'anonymous-mobile',
@@ -125,12 +144,9 @@ class StreamChatPresenter
 
       isLoading = LoadingData(isLoading: false);
       LoggerService.debug(
-        'Conversa carregada: ${messages.length} mensagens',
+        'Conversa carregada com sucesso - Local: $conversationId, Dify: ${difyConversationId ?? "NOVA"}',
         name: 'ChatPresenter',
       );
-
-      _isAnonymousSession = false;
-      _anonymousSessionId = null;
     } catch (error) {
       isLoading = LoadingData(isLoading: false);
       LoggerService.error(
@@ -462,6 +478,18 @@ class StreamChatPresenter
       }
 
       final metadataMap = metadata?.toMap() ?? <String, dynamic>{};
+
+      if (metadata != null) {
+        metadataMap.addAll(metadata.toMap());
+
+        // Adiciona os IDs do Dify explicitamente
+        if (metadata.conversationId != null) {
+          metadataMap['dify_conversation_id'] = metadata.conversationId;
+        }
+        if (metadata.messageId != null) {
+          metadataMap['dify_message_id'] = metadata.messageId;
+        }
+      }
 
       // Salva mensagem com metadata
       final assistantMessage = await _sendMessage.send(
