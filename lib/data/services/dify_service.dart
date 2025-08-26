@@ -264,4 +264,34 @@ class DifyService implements SendToDify {
       name: 'DifyService',
     );
   }
+
+  // Método para definir mapeamento manualmente (para conversas carregadas do cache)
+  static void setConversationMapping(
+      String localConversationId, String difyConversationId) {
+    _conversationCache[localConversationId] = difyConversationId;
+    LoggerService.debug(
+      'Mapeamento manual criado: $localConversationId → $difyConversationId',
+      name: 'DifyService',
+    );
+  }
+
+  // Método para verificar se tem mapeamento
+  static bool hasMapping(String localConversationId) {
+    return _conversationCache.containsKey(localConversationId);
+  }
+
+  // Método para obter mapeamento
+  static String? getMapping(String localConversationId) {
+    return _conversationCache[localConversationId];
+  }
+
+// Método para debug do cache atual
+  static void printCache() {
+    LoggerService.debug('=== CACHE DO DIFYSERVICE ===', name: 'DifyService');
+    _conversationCache.forEach((local, dify) {
+      LoggerService.debug('  $local → $dify', name: 'DifyService');
+    });
+    LoggerService.debug('Total: ${_conversationCache.length} mapeamentos',
+        name: 'DifyService');
+  }
 }

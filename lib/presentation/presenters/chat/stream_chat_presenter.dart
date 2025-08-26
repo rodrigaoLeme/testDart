@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:seven_chat_app/main/services/logger_service.dart';
 
 import '../../../data/models/dify/dify.dart';
+import '../../../data/repositories/dify_chat_repository.dart';
 import '../../../data/services/dify_service.dart';
 import '../../../domain/entities/chat/chat.dart';
 import '../../../domain/helpers/helpers.dart';
@@ -23,6 +24,7 @@ class StreamChatPresenter
   final SendMessage _sendMessage;
   final SendToDify _sendToDify;
   final UpdateConversation _updateConversation;
+  final DifyChatRepository _difyChatRepository;
 
   StreamChatPresenter({
     required LoadCurrentUser loadCurrentUser,
@@ -31,12 +33,14 @@ class StreamChatPresenter
     required SendMessage sendMessage,
     required SendToDify sendToDify,
     required UpdateConversation updateConversation,
+    required DifyChatRepository difyChatRepository,
   })  : _loadCurrentUser = loadCurrentUser,
         _createConversation = createConversation,
         _loadMessages = loadMessages,
         _sendMessage = sendMessage,
         _sendToDify = sendToDify,
-        _updateConversation = updateConversation;
+        _updateConversation = updateConversation,
+        _difyChatRepository = difyChatRepository;
 
   // Stream Controllers
   final StreamController<List<MessageEntity>> _messagesController =
@@ -99,52 +103,28 @@ class StreamChatPresenter
       );
 
       // Carrega mensagens da conversa
-      final messages = await _loadMessages.load(conversationId: conversationId);
+      //final messages = await _loadMessages.load(conversationId: conversationId);
+      final messages = await _difyChatRepository.getMessages(
+        conversationId: conversationId,
+      );
 
       _cachedMessages = messages;
       _messagesController.sink.add(messages);
 
-      final currentUser = await _loadCurrentUser.load();
-
-      String? difyConversationId;
-
-      for (final message in messages.reversed) {
-        if (message.type == MessageType.assistant &&
-            message.metadata['dify_conversation_id'] != null) {
-          difyConversationId =
-              message.metadata['dify_conversation_id'] as String;
-
-          DifyService.restoreConversationCache(
-              conversationId, difyConversationId);
-
-          LoggerService.debug(
-            'Dify conversation ID recuperado do histórico: $difyConversationId',
-            name: 'ChatPresenter',
-          );
-          break;
-        }
-      }
-
-      _currentConversation = ConversationEntity(
-        id: conversationId,
-        userId: currentUser?.id ?? 'anonymous-mobile',
-        title: _extractTitleFromMessages(messages),
-        createdAt:
-            messages.isNotEmpty ? messages.first.timestamp : DateTime.now(),
-        updatedAt:
-            messages.isNotEmpty ? messages.last.timestamp : DateTime.now(),
-        lastMessage: messages.isNotEmpty ? messages.last.content : '',
-        messageCount: messages.length,
+      // Busca dados da conversa também
+      final conversations =
+          await _difyChatRepository.loadConversationsFromCache();
+      final conversation = conversations.firstWhere(
+        (c) => c.id == conversationId,
+        orElse: () => throw Exception('Conversa não encontrada'),
       );
 
+      _currentConversation = conversation.toEntity();
       _conversationController.sink.add(_currentConversation);
-
-      _isAnonymousSession = false;
-      _anonymousSessionId = null;
 
       isLoading = LoadingData(isLoading: false);
       LoggerService.debug(
-        'Conversa carregada com sucesso - Local: $conversationId, Dify: ${difyConversationId ?? "NOVA"}',
+        'Conversa carregada: ${messages.length} mensagens',
         name: 'ChatPresenter',
       );
     } catch (error) {
@@ -234,30 +214,170 @@ class StreamChatPresenter
   // Send Message
   @override
   Future<void> sendMessage(String content) async {
-    if (content.trim().isEmpty) return;
-
-    if (_currentConversation == null) {
-      LoggerService.info(
-        'sendMessage chamado sem conversa atual - criando nova',
+    try {
+      LoggerService.debug(
+        'Enviando mensagem: ${content.length > 20 ? content.substring(0, 20) : content}...',
         name: 'ChatPresenter',
       );
-      await createNewConversation(content);
-      return;
+
+      // Busca o user ID real
+      final currentUser = await _loadCurrentUser.load();
+      final userId = currentUser?.id ??
+          'anonymous-${DateTime.now().millisecondsSinceEpoch}';
+
+      // ===== FLUXO PARA PRIMEIRA MENSAGEM (Nova Conversa) =====
+      if (_currentConversation == null) {
+        LoggerService.debug(
+            'Nova conversa - não cria ainda, aguarda resposta do Dify',
+            name: 'ChatPresenter');
+
+        // Apenas cria mensagem do usuário temporária para UI
+        final tempUserMessage = MessageEntity(
+          id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+          conversationId: 'temp_conversation', // Temporário
+          content: content.trim(),
+          type: MessageType.user,
+          timestamp: DateTime.now(),
+          status: MessageStatus.sent,
+          metadata: {},
+        );
+
+        _cachedMessages.add(tempUserMessage);
+        _messagesController.sink.add(List.from(_cachedMessages));
+
+        // Inicia estado "pensando"
+        _startThinkingState();
+
+        // Variáveis para capturar dados do Dify
+        String fullResponse = '';
+        DifyMetadata? finalMetadata;
+
+        // Envia para Dify SEM conversation ID (primeira mensagem)
+        _difyStreamSubscription?.cancel();
+        _difyStreamSubscription = _sendToDify
+            .sendMessage(
+          message: content.trim(),
+          conversationId: '', // Vazio para nova conversa
+          userId: userId,
+        )
+            .listen(
+          (difyResponse) {
+            // Primeira resposta, para o "pensando" e inicia "digitando"
+            if (_isThinking && difyResponse.content.trim().isNotEmpty) {
+              _stopThinkingState();
+              _startTypingEffect();
+            }
+
+            fullResponse = difyResponse.content;
+
+            // Só envia para o stream se não está mais pensando
+            if (!_isThinking) {
+              _typingTextController.sink.add(difyResponse.content);
+            }
+
+            if (difyResponse.isComplete && difyResponse.metadata != null) {
+              finalMetadata = difyResponse.metadata;
+            }
+          },
+          onDone: () async {
+            LoggerService.debug(
+                '🟢 Stream finalizado, criando conversa com dados do Dify',
+                name: 'ChatPresenter');
+
+            if (finalMetadata?.conversationId != null) {
+              // AQUI É ONDE CRIAMOS A CONVERSA REAL
+              await _createConversationFromDifyResponse(
+                userId: userId,
+                userMessage: content.trim(),
+                difyResponse: fullResponse,
+                difyMetadata: finalMetadata!,
+              );
+            }
+
+            await _completeAssistantMessage(fullResponse, finalMetadata);
+          },
+          onError: (error) {
+            LoggerService.error('🔴 Erro no stream: $error',
+                name: 'ChatPresenter');
+            _stopThinkingState();
+            _stopTypingEffect();
+            _handleError(error);
+          },
+        );
+      } else {
+        // ===== FLUXO PARA CONVERSA EXISTENTE =====
+        LoggerService.debug('Conversa existente: ${_currentConversation!.id}',
+            name: 'ChatPresenter');
+
+        // Adiciona mensagem do usuário normalmente
+        final userMessage = await _sendMessage.send(
+          conversationId: _currentConversation!.id,
+          content: content.trim(),
+          type: MessageType.user,
+        );
+
+        _cachedMessages.add(userMessage);
+        _messagesController.sink.add(List.from(_cachedMessages));
+
+        // Resto do fluxo igual ao atual...
+        _startThinkingState();
+
+        // Envia para Dify COM conversation ID existente
+        String fullResponse = '';
+        DifyMetadata? finalMetadata;
+
+        _difyStreamSubscription?.cancel();
+        _difyStreamSubscription = _sendToDify
+            .sendMessage(
+          message: content.trim(),
+          conversationId: _currentConversation!.id,
+          userId: userId,
+        )
+            .listen(
+          (difyResponse) {
+            if (_isThinking && difyResponse.content.trim().isNotEmpty) {
+              _stopThinkingState();
+              _startTypingEffect();
+            }
+
+            fullResponse = difyResponse.content;
+
+            if (!_isThinking) {
+              _typingTextController.sink.add(difyResponse.content);
+            }
+
+            if (difyResponse.isComplete && difyResponse.metadata != null) {
+              finalMetadata = difyResponse.metadata;
+            }
+          },
+          onDone: () async {
+            LoggerService.debug('🟢 Stream finalizado, salvando resposta',
+                name: 'ChatPresenter');
+
+            // Atualiza última mensagem da conversa para o drawer
+            await _difyChatRepository.updateLastMessage(
+              _currentConversation!.id,
+              fullResponse,
+            );
+
+            await _completeAssistantMessage(fullResponse, finalMetadata);
+          },
+          onError: (error) {
+            LoggerService.error('🔴 Erro no stream: $error',
+                name: 'ChatPresenter');
+            _stopThinkingState();
+            _stopTypingEffect();
+            _handleError(error);
+          },
+        );
+      }
+    } catch (error) {
+      LoggerService.error('Erro ao enviar mensagem: $error',
+          name: 'ChatPresenter');
+      _stopThinkingState();
+      _stopTypingEffect();
+      _handleError(error);
     }
-
-    LoggerService.debug(
-      'Enviando mensagem na conversa: ${_currentConversation!.id}',
-      name: 'ChatPresenter',
-    );
-
-    // Se é sessão anônima, usa fluxo diferente
-    if (_isAnonymousSession) {
-      await _sendAnonymousMessage(content);
-      return;
-    }
-
-    // Fluxo normal para usuários logados
-    await _sendAuthenticatedMessage(content);
   }
 
   // Envio de mensagem anônima (apenas em memória)
@@ -340,6 +460,49 @@ class StreamChatPresenter
       _stopThinkingState();
       _stopTypingEffect();
       _handleError(error);
+    }
+  }
+
+  // Novo método para criar conversa após resposta do Dify
+  Future<void> _createConversationFromDifyResponse({
+    required String userId,
+    required String userMessage,
+    required String difyResponse,
+    required DifyMetadata difyMetadata,
+  }) async {
+    try {
+      LoggerService.debug(
+          'Criando conversa com dados do Dify: ${difyMetadata.conversationId}',
+          name: 'ChatPresenter');
+
+      // Se estamos usando DifyChatRepository
+      final conversation =
+          await _difyChatRepository.createConversationFromDifyResponse(
+        userId: userId,
+        difyConversationId: difyMetadata.conversationId!,
+        difyTitle: _generateTitleFromMessage(
+            userMessage), // Ou usar título do Dify se disponível
+        firstMessage: userMessage,
+        difyResponse: difyResponse,
+      );
+
+      // Atualiza conversa atual
+      _currentConversation = conversation;
+      _conversationController.sink.add(conversation);
+
+      // Recria mensagens com IDs corretos (do Dify)
+      await _recreateMessagesWithDifyIds(
+        conversationId: conversation.id,
+        userMessage: userMessage,
+        difyResponse: difyResponse,
+        difyMetadata: difyMetadata,
+      );
+
+      LoggerService.debug('Nova conversa criada: ${conversation.id}',
+          name: 'ChatPresenter');
+    } catch (error) {
+      LoggerService.error('Erro ao criar conversa com dados do Dify: $error',
+          name: 'ChatPresenter');
     }
   }
 
@@ -428,6 +591,68 @@ class StreamChatPresenter
       _stopTypingEffect();
       _handleError(error);
     }
+  }
+
+  // Helper para recriar mensagens com IDs corretos
+  Future<void> _recreateMessagesWithDifyIds({
+    required String conversationId,
+    required String userMessage,
+    required String difyResponse,
+    required DifyMetadata difyMetadata,
+  }) async {
+    try {
+      // Limpa mensagens temporárias
+      _cachedMessages.clear();
+
+      // Cria mensagem do usuário com ID correto
+      final userMessageEntity = MessageEntity(
+        id: '${difyMetadata.messageId}_user', // Base no ID do Dify
+        conversationId: conversationId,
+        content: userMessage,
+        type: MessageType.user,
+        timestamp: DateTime.now().subtract(const Duration(seconds: 1)),
+        status: MessageStatus.sent,
+        metadata: {
+          'dify_conversation_id': difyMetadata.conversationId,
+          'dify_message_id': difyMetadata.messageId,
+        },
+      );
+
+      // Cria mensagem do assistente
+      final assistantMessageEntity = MessageEntity(
+        id: '${difyMetadata.messageId}_assistant',
+        conversationId: conversationId,
+        content: difyResponse,
+        type: MessageType.assistant,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sent,
+        metadata: {
+          'dify_conversation_id': difyMetadata.conversationId,
+          'dify_message_id': difyMetadata.messageId,
+        },
+      );
+
+      _cachedMessages.addAll([userMessageEntity, assistantMessageEntity]);
+
+      // Salva no repository para cache usando métodos públicos
+      await _difyChatRepository.addMessagesToCache(
+        conversationId,
+        [userMessageEntity, assistantMessageEntity],
+      );
+
+      _messagesController.sink.add(List.from(_cachedMessages));
+
+      LoggerService.debug('Mensagens recriadas com IDs do Dify',
+          name: 'ChatPresenter');
+    } catch (error) {
+      LoggerService.error('Erro ao recriar mensagens: $error',
+          name: 'ChatPresenter');
+    }
+  }
+
+  String _generateTitleFromMessage(String message) {
+    if (message.length <= 50) return message;
+    return '${message.substring(0, 47)}...';
   }
 
   // Completa mensagem do assistente anônimo

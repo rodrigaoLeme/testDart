@@ -1,4 +1,4 @@
 import '../../../../domain/usecases/chat/create_conversation.dart';
-import '../../repositories/chat_repository_factory.dart';
+import '../../repositories/dify_chat_repository_factory.dart';
 
-CreateConversation makeCreateConversation() => makeChatRepository();
+CreateConversation makeCreateConversation() => makeDifyChatRepository();

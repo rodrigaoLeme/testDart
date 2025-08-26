@@ -1,4 +1,4 @@
 import '../../../../domain/usecases/chat/load_messages.dart';
-import '../../repositories/messages_repository_factory.dart';
+import '../../adapters/dify_load_messages_adapter_factory.dart';
 
-LoadMessages makeLoadMessages() => makeMessagesRepository();
+LoadMessages makeLoadMessages() => makeDifyLoadMessagesAdapter();

@@ -148,8 +148,7 @@ class MessageModel {
   String? get difyConversationId => metadata['dify_conversation_id'] as String?;
   String? get difyMessageId => metadata['dify_message_id'] as String?;
 
-  bool get hasDifyContext =>
-      difyConversationId != null || difyMessageId != null;
+  bool get hasDifyContext => difyConversationId != null;
 
   // Copy with para adicionar contexto Dify posteriormente
   MessageModel copyWith({

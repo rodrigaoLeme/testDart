@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../domain/entities/chat/chat.dart';
 import '../../domain/helpers/helpers.dart';
-import '../../domain/usecases/chat/chat.dart';
 import '../../domain/usecases/usecases.dart';
 import '../../infra/cache/cache.dart';
 import '../../main/services/logger_service.dart';
@@ -33,14 +32,44 @@ class ChatRepository
     required LoadCurrentUser loadCurrentUser,
   }) : _loadCurrentUser = loadCurrentUser;
 
-  // LOAD CONVERSATIONS (implementa LoadConversations)
+  // LOAD CONVERSATIONS
   @override
   Future<List<ConversationEntity>> load({
     int limit = 20,
     String? startAfter,
   }) async {
     try {
-      // Tenta carregar do cache primeiro
+      // 1. SEMPRE tenta carregar do cache primeiro (instantâneo)
+      final cachedConversations = await _loadConversationsFromCache();
+
+      // 2. Se tem cache, retorna imediatamente
+      if (cachedConversations.isNotEmpty) {
+        LoggerService.debug(
+          'Conversas carregadas do cache: ${cachedConversations.length}',
+          name: 'ChatRepository',
+        );
+
+        // 3. Agenda sincronização em background se necessário
+        _scheduleSyncIfNeeded();
+
+        return cachedConversations
+            .map((model) => model.toEntity())
+            .take(limit)
+            .toList();
+      }
+
+      // 4. Se não tem cache, busca do Firebase
+      LoggerService.debug(
+        'Cache vazio, buscando conversas do Firebase...',
+        name: 'ChatRepository',
+      );
+      return await sync();
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao carregar conversas: $error',
+        name: 'ChatRepository',
+      );
+
       final cachedConversations = await _loadConversationsFromCache();
       if (cachedConversations.isNotEmpty) {
         return cachedConversations
@@ -49,10 +78,8 @@ class ChatRepository
             .toList();
       }
 
-      // Se não há cache, busca do Firestore
-      return await sync();
-    } catch (error) {
-      throw DomainError.unexpected;
+      // Se não tem cache e deu erro, retorna lista vazia. Pode ser um usuário anônimo
+      return [];
     }
   }
 
@@ -188,9 +215,28 @@ class ChatRepository
   Future<List<ConversationEntity>> sync({bool forceRefresh = false}) async {
     try {
       if (!forceRefresh && !await _shouldSync()) {
+        LoggerService.debug(
+          'Sync não necessário, usando cache',
+          name: 'ChatRepository',
+        );
         final cachedConversations = await _loadConversationsFromCache();
         return cachedConversations.map((model) => model.toEntity()).toList();
       }
+
+      final currentUser = await _loadCurrentUser.load();
+      if (currentUser == null) {
+        LoggerService.debug(
+          'Usuário não logado, retornando cache ou lista vazia',
+          name: 'ChatRepository',
+        );
+        final cachedConversations = await _loadConversationsFromCache();
+        return cachedConversations.map((model) => model.toEntity()).toList();
+      }
+
+      LoggerService.debug(
+        'Sincronizando conversas com Firebase...',
+        name: 'ChatRepository',
+      );
 
       // Busca do Firestore
       final conversations = await _fetchConversationsFromFirestore();
@@ -204,17 +250,48 @@ class ChatRepository
         value: DateTime.now().toIso8601String(),
       );
 
+      LoggerService.debug(
+        'Sync concluído: ${conversations.length} conversas',
+        name: 'ChatRepository',
+      );
+
       return conversations.map((model) => model.toEntity()).toList();
     } catch (error) {
+      LoggerService.error(
+        'Erro no sync: $error',
+        name: 'ChatRepository',
+      );
+
       final cachedConversations = await _loadConversationsFromCache();
       if (cachedConversations.isNotEmpty) {
         return cachedConversations.map((model) => model.toEntity()).toList();
       }
+
       throw DomainError.networkError;
     }
   }
 
   // MÉTODOS PRIVADOS (Cache Management)
+
+  // Agenda sync em background se necessário
+  void _scheduleSyncIfNeeded() {
+    Future.delayed(Duration.zero, () async {
+      try {
+        if (await _shouldSync()) {
+          LoggerService.debug(
+            'Sincronização em background iniciada...',
+            name: 'ChatRepository',
+          );
+          await sync();
+        }
+      } catch (error) {
+        LoggerService.debug(
+          'Erro na sincronização em background (não crítico): $error',
+          name: 'ChatRepository',
+        );
+      }
+    });
+  }
 
   Future<List<ConversationModel>> _loadConversationsFromCache() async {
     try {
@@ -222,8 +299,18 @@ class ChatRepository
       if (cacheString == null || cacheString.isEmpty) {
         return [];
       }
-      return ConversationModel.fromCacheString(cacheString);
-    } catch (_) {
+
+      final conversations = ConversationModel.fromCacheString(cacheString);
+
+      // mais recentes primeiro
+      conversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+      return conversations;
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao carregar cache de conversas: $error',
+        name: 'ChatRepository',
+      );
       return [];
     }
   }
@@ -397,7 +484,7 @@ class ChatRepository
 
   Future<bool> _shouldSync() async {
     try {
-      // Verifica se passou do tempo limite (1 hora para conversas)
+      // Verifica se passou do tempo limite
       final lastSyncString = await localStorage.fetch(_lastSyncKey);
       if (lastSyncString == null) return true;
 
