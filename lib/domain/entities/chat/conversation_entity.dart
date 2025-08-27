@@ -10,6 +10,7 @@ class ConversationEntity {
   final bool isActive;
   final String lastMessage;
   final List<MessageEntity> messages;
+  final Map<String, dynamic> metadata;
 
   ConversationEntity({
     required this.id,
@@ -21,6 +22,7 @@ class ConversationEntity {
     this.isActive = true,
     this.lastMessage = '',
     this.messages = const [],
+    this.metadata = const {},
   });
 
   ConversationEntity copyWith({
@@ -33,6 +35,7 @@ class ConversationEntity {
     bool? isActive,
     String? lastMessage,
     List<MessageEntity>? messages,
+    Map<String, dynamic>? metadata,
   }) {
     return ConversationEntity(
       id: id ?? this.id,
@@ -44,6 +47,7 @@ class ConversationEntity {
       isActive: isActive ?? this.isActive,
       lastMessage: lastMessage ?? this.lastMessage,
       messages: messages ?? this.messages,
+      metadata: metadata ?? this.metadata,
     );
   }
 

@@ -37,7 +37,7 @@ class DifyService implements SendToDify {
       LoggerService.debug('Dify: Enviando mensagem...', name: 'DifyService');
 
       // Busca o conversation_id do Dify se já existe
-      final difyConversationId = _conversationCache[conversationId] ?? '';
+      final difyConversationId = _getDifyConversationId(conversationId);
 
       LoggerService.debug(
         'Cache check - Local ID: "$conversationId" → Dify ID: "${difyConversationId.isEmpty ? "NOVA CONVERSA" : difyConversationId}"',
@@ -91,6 +91,36 @@ class DifyService implements SendToDify {
     }
   }
 
+  // Determina qual conversation_id enviar para o Dify
+  String _getDifyConversationId(String localConversationId) {
+    // 1. Se já está no cache, use o ID do Dify
+    if (_conversationCache.containsKey(localConversationId)) {
+      final difyId = _conversationCache[localConversationId]!;
+      LoggerService.debug(
+        'Usando conversation_id do cache: $difyId',
+        name: 'DifyService',
+      );
+      return difyId;
+    }
+
+    // 2. Se o localConversationId já parece ser um ID do Dify, use ele
+    if (localConversationId.length > 20 &&
+        !localConversationId.startsWith('temp_')) {
+      LoggerService.debug(
+        'ID parece ser do Dify, usando diretamente: $localConversationId',
+        name: 'DifyService',
+      );
+      return localConversationId;
+    }
+
+    // 3. Nova conversa - enviar string vazia
+    LoggerService.debug(
+      'Nova conversa, enviando conversation_id vazio',
+      name: 'DifyService',
+    );
+    return '';
+  }
+
   Stream<DifyStreamResponse> _handleStreamingWithLocalSimulation(
       String sseData, String localConversationId) async* {
     String fullAnswer = '';
@@ -98,7 +128,7 @@ class DifyService implements SendToDify {
     String? difyMessageId;
 
     try {
-      // 🚀 PRIMEIRO: PROCESSA Todo O STREAMING PARA PEGAR RESPOSTA COMPLETA
+      // PROCESSA Todo O STREAMING PARA PEGAR RESPOSTA COMPLETA
       final lines = sseData.split('\n');
 
       for (final line in lines) {
@@ -123,6 +153,10 @@ class DifyService implements SendToDify {
                 difyConversationId = conversationId;
                 _conversationCache[localConversationId] = conversationId;
 
+                if (!localConversationId.startsWith('temp_')) {
+                  _conversationCache[conversationId] = conversationId;
+                }
+
                 LoggerService.debug(
                   'Cache atualizado - Local: $localConversationId → Dify: $conversationId',
                   name: 'DifyService',
@@ -141,7 +175,7 @@ class DifyService implements SendToDify {
         }
       }
 
-      // 🚀 SEGUNDO: SIMULA DIGITAÇÃO COM A RESPOSTA COMPLETA
+      // SIMULA DIGITAÇÃO COM A RESPOSTA COMPLETA
       if (fullAnswer.isNotEmpty) {
         yield* _simulateTypingFromCompleteResponse(
           fullAnswer,
@@ -263,6 +297,57 @@ class DifyService implements SendToDify {
       'Cache restaurado - Local: $localConversationId → Dify: $difyConversationId',
       name: 'DifyService',
     );
+  }
+
+  Future<String?> getConversationTitle(
+      String difyConversationId, String userId) async {
+    try {
+      LoggerService.debug(
+        'Buscando título para conversa: $difyConversationId',
+        name: 'DifyService',
+      );
+      final response = await httpClient.request(
+        url: '$baseUrl/conversations',
+        method: HttpMethod.get,
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        queryParameters: {
+          'user': userId,
+          'limit': '1',
+          'first_id': difyConversationId,
+        },
+      );
+
+      if (response != null) {
+        final json = response as Map<String, dynamic>;
+        final conversations = json['data'] as List<dynamic>?;
+
+        if (conversations != null && conversations.isNotEmpty) {
+          final conversation = conversations.first as Map<String, dynamic>;
+          final title = conversation['name'] as String?;
+
+          LoggerService.debug(
+            'Título encontrado: "$title"',
+            name: 'DifyService',
+          );
+
+          return title;
+        }
+      }
+
+      LoggerService.debug(
+        'Nenhum título encontrado para conversa: $difyConversationId',
+        name: 'DifyService',
+      );
+
+      return null;
+    } catch (error) {
+      LoggerService.error('Erro ao buscar título da conversa: $error',
+          name: 'DifyService');
+      return null;
+    }
   }
 
   // Método para definir mapeamento manualmente (para conversas carregadas do cache)
