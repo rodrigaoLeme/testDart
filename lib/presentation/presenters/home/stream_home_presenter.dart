@@ -257,7 +257,7 @@ class StreamHomePresenter implements HomePresenter {
   // Sync periódico a cada 5 minutos
   void _startPeriodicSync() {
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _syncTimer = Timer.periodic(const Duration(minutes: 60), (_) {
       _syncInBackground();
     });
   }

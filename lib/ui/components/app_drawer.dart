@@ -36,7 +36,7 @@ class AppDrawer extends StatelessWidget {
         child: Column(
           children: [
             _buildHeader(context),
-            _buildSearch(),
+            //_buildSearch(),
             //_buildMenuItems(context),
             _buildConversationsSection(context),
             _buildConversationHistory(),

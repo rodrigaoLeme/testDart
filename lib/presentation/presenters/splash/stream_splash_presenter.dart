@@ -132,7 +132,7 @@ class StreamSplashPresenter with NavigationManager implements SplashPresenter {
           name: 'SplashPreload');
 
       final syncResult = await difySyncService.fullSync(
-        conversationsLimit: 50, // Comece com 50 para testar
+        conversationsLimit: 10, // Comece com 50 para testar
         messagesPerConversation: 50, // 50 mensagens por conversa
         onProgress: (progress) {
           LoggerService.debug('Dify sync: $progress', name: 'SplashPreload');

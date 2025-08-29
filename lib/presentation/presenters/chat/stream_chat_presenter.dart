@@ -386,8 +386,7 @@ class StreamChatPresenter
 
       // 3. Busca userId
       final currentUser = await _loadCurrentUser.load();
-      final userId = currentUser?.id ??
-          'anonymous-${DateTime.now().millisecondsSinceEpoch}';
+      final userId = currentUser?.id ?? 'anonymous-mobile';
 
       // 4. Stream do Dify
       String fullResponse = '';
@@ -585,7 +584,7 @@ class StreamChatPresenter
 
       // 3. Busca o user ID real
       final currentUser = await _loadCurrentUser.load();
-      final userId = currentUser?.id ?? 'anonymous-user';
+      final userId = currentUser?.id ?? 'anonymous-mobile';
 
       LoggerService.debug(
         'Enviando para Dify - ConversationID: ${_currentConversation!.id}, UserID: $userId',
