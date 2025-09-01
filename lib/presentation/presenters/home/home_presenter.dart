@@ -22,4 +22,9 @@ abstract class HomePresenter {
   void addNewConversation(ConversationEntity conversation);
   void updateConversation(ConversationEntity conversation);
   void deleteConversation(String conversationId);
+
+  // Paginação
+  Future<void> loadMoreConversations();
+  bool get isLoadingMore;
+  bool get hasMoreConversations;
 }

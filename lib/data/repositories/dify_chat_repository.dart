@@ -48,32 +48,53 @@ class DifyChatRepository
         name: 'DifyChatRepository',
       );
 
-      // Tenta carregar do cache primeiro
-      final cachedConversations = await _loadConversationsFromCache();
-      if (cachedConversations.isNotEmpty) {
+      if (startAfter == null) {
+        // Primeira página - tenta cache primeiro
+        final cachedConversations = await _loadConversationsFromCache();
+        if (cachedConversations.isNotEmpty) {
+          final result = cachedConversations
+              .map((model) => model.toEntity())
+              .take(limit)
+              .toList();
+          LoggerService.debug('Retornando ${result.length} conversas do cache',
+              name: 'DifyChatRepository');
+          return result;
+        }
+
+        // Sem cache, busca do Dify
+        return await sync();
+      } else {
+        // Páginas seguintes - sempre busca do Dify
+        final currentUser = await _loadCurrentUser.load();
+        if (currentUser == null) {
+          throw DomainError.accessDenied;
+        }
+
+        LoggerService.debug('Buscando mais conversas do Dify...',
+            name: 'DifyChatRepository');
+
+        final difyResponse = await difyApiClient.getConversations(
+          userId: currentUser.id,
+          limit: limit,
+          lastId: startAfter,
+        );
+
+        final conversations = DifyConversationAdapter.fromDifyList(
+          difyConversations: difyResponse.data,
+          userId: currentUser.id,
+        );
+
         LoggerService.debug(
-          'Conversas carregadas do cache: ${cachedConversations.length}',
+          'Carregadas ${conversations.length} conversas adicionais do Dify',
           name: 'DifyChatRepository',
         );
 
-        return cachedConversations
-            .map((model) => model.toEntity())
-            .take(limit)
-            .toList();
+        return conversations.map((model) => model.toEntity()).toList();
       }
-
-      // Se não há cache, busca do Dify
-      LoggerService.debug(
-        'Cache vazio, sincronizando com Dify...',
-        name: 'DifyChatRepository',
-      );
-      return await sync();
     } catch (error) {
-      LoggerService.error(
-        'Erro ao carregar conversas: $error',
-        name: 'DifyChatRepository',
-      );
-      throw DomainError.unexpected;
+      LoggerService.error('Erro ao carregar conversas: $error',
+          name: 'DifyChatRepository');
+      return [];
     }
   }
 
@@ -437,10 +458,28 @@ class DifyChatRepository
       ConversationModel conversation) async {
     final cached = await _loadConversationsFromCache();
     final index = cached.indexWhere((c) => c.id == conversation.id);
+
+    LoggerService.debug(
+      'Atualizando conversa no cache: ${conversation.id} (índice: $index)',
+      name: 'DifyChatRepository',
+    );
+
     if (index != -1) {
       cached[index] = conversation;
-      await _saveConversationsToCache(cached);
+      LoggerService.debug('Conversa atualizada na posição $index',
+          name: 'DifyChatRepository');
+    } else {
+      cached.insert(0, conversation);
+      LoggerService.debug('Nova conversa adicionada ao cache',
+          name: 'DifyChatRepository');
     }
+
+    await _saveConversationsToCache(cached);
+
+    LoggerService.debug(
+      'Cache salvo com ${cached.length} conversas total',
+      name: 'DifyChatRepository',
+    );
   }
 
   Future<void> _removeConversationFromCache(String conversationId) async {
@@ -489,8 +528,16 @@ class DifyChatRepository
   /// Atualiza conversa no cache (público para uso no presenter)
   Future<void> updateConversationInCache(
       ConversationEntity conversation) async {
+    LoggerService.debug(
+        'Tentando atualizar conversa no cache: ${conversation.id}',
+        name: 'DifyChatRepository');
+
     final conversationModel = ConversationModel.fromEntity(conversation);
     await _updateConversationInCache(conversationModel);
+
+    LoggerService.debug(
+        'Conversa atualizada no cache com sucesso: ${conversation.id}',
+        name: 'DifyChatRepository');
   }
 
   /// Salva lista de conversas no cache (público para SyncService)
@@ -627,6 +674,26 @@ class DifyChatRepository
         'Erro ao atualizar última mensagem: $error',
         name: 'DifyChatRepository',
       );
+    }
+  }
+
+  Future<void> debugCacheContents() async {
+    try {
+      final cached = await _loadConversationsFromCache();
+      LoggerService.debug('=== CACHE CONTENTS ===', name: 'CacheDebug');
+      LoggerService.debug('Total conversas: ${cached.length}',
+          name: 'CacheDebug');
+
+      for (int i = 0; i < cached.length; i++) {
+        final conv = cached[i];
+        LoggerService.debug(
+          '[$i] ${conv.id} - "${conv.title}" (${conv.messageCount} msgs)',
+          name: 'CacheDebug',
+        );
+      }
+      LoggerService.debug('=====================', name: 'CacheDebug');
+    } catch (error) {
+      LoggerService.error('Erro ao debugar cache: $error', name: 'CacheDebug');
     }
   }
 }

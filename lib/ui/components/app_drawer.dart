@@ -89,35 +89,35 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildSearch() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.blue,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.search,
-            color: AppColors.textPrimary,
-            size: 25,
-          ),
-          const SizedBox(width: 12),
-          Text(
-            R.string.search,
-            style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontFamily: 'Poppins',
-                fontSize: 16,
-                fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
+  // Devem ser usados em uma próxima feature
+  // Widget _buildSearch() {
+  //   return Container(
+  //     margin: const EdgeInsets.symmetric(horizontal: 16),
+  //     padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+  //     decoration: BoxDecoration(
+  //       color: AppColors.blue,
+  //       borderRadius: BorderRadius.circular(20),
+  //     ),
+  //     child: Row(
+  //       children: [
+  //         const Icon(
+  //           Icons.search,
+  //           color: AppColors.textPrimary,
+  //           size: 25,
+  //         ),
+  //         const SizedBox(width: 12),
+  //         Text(
+  //           R.string.search,
+  //           style: const TextStyle(
+  //               color: AppColors.textPrimary,
+  //               fontFamily: 'Poppins',
+  //               fontSize: 16,
+  //               fontWeight: FontWeight.w500),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   // Widget _buildMenuItems(BuildContext context) {
   //   final menuItems = [
@@ -195,7 +195,7 @@ class AppDrawer extends StatelessWidget {
 
   Widget _buildConversationsSection(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(top: 32),
+      margin: const EdgeInsets.only(top: 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -263,34 +263,97 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildConversationHistory() {
-    if (homePresenter == null) {
-      return const SizedBox.shrink();
-    }
+  // Widget _buildConversationHistory() {
+  //   if (homePresenter == null) {
+  //     return const SizedBox.shrink();
+  //   }
 
+  //   return Expanded(
+  //     child: StreamBuilder<List<ConversationEntity>>(
+  //         stream: homePresenter!.conversationsStream,
+  //         initialData: homePresenter!.conversations,
+  //         builder: (context, snapshot) {
+  //           final conversations = snapshot.data ?? [];
+
+  //           if (conversations.isEmpty) {
+  //             return const SizedBox();
+  //           }
+
+  //           return Container(
+  //             margin: const EdgeInsets.symmetric(vertical: 8),
+  //             child: ListView.builder(
+  //               padding: EdgeInsets.zero,
+  //               physics: const BouncingScrollPhysics(),
+  //               itemCount: conversations.length,
+  //               itemBuilder: (context, index) {
+  //                 return _buildConversationItem(conversations[index]);
+  //               },
+  //             ),
+  //           );
+  //         }),
+  //   );
+  // }
+
+  Widget _buildConversationHistory() {
     return Expanded(
       child: StreamBuilder<List<ConversationEntity>>(
-          stream: homePresenter!.conversationsStream,
-          initialData: homePresenter!.conversations,
-          builder: (context, snapshot) {
-            final conversations = snapshot.data ?? [];
+        stream: homePresenter!.conversationsStream,
+        builder: (context, snapshot) {
+          final conversations = snapshot.data ?? homePresenter!.conversations;
 
-            if (conversations.isEmpty) {
-              return const SizedBox();
-            }
+          if (conversations.isEmpty) return const SizedBox.shrink();
 
-            return Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
+          return Container(
+            margin: const EdgeInsets.only(top: 16),
+            constraints: const BoxConstraints(maxHeight: 300), // Altura máxima
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (ScrollNotification scrollInfo) {
+                // Detecta quando usuário está próximo do final
+                if (scrollInfo.metrics.pixels >=
+                    scrollInfo.metrics.maxScrollExtent - 100) {
+                  // Carrega mais conversas automaticamente
+                  if (homePresenter!.hasMoreConversations &&
+                      !homePresenter!.isLoadingMore) {
+                    homePresenter!.loadMoreConversations();
+                  }
+                }
+                return false;
+              },
               child: ListView.builder(
-                padding: EdgeInsets.zero,
-                physics: const BouncingScrollPhysics(),
-                itemCount: conversations.length,
+                itemCount: conversations.length +
+                    (homePresenter!.isLoadingMore ? 1 : 0),
                 itemBuilder: (context, index) {
-                  return _buildConversationItem(conversations[index]);
+                  // Conversas normais
+                  if (index < conversations.length) {
+                    final conversation = conversations[index];
+                    return _buildConversationItem(conversation);
+                  }
+
+                  // Indicador de loading
+                  if (homePresenter!.isLoadingMore) {
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.textSecondary),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return const SizedBox.shrink();
                 },
               ),
-            );
-          }),
+            ),
+          );
+        },
+      ),
     );
   }
 

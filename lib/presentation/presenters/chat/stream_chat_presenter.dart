@@ -19,11 +19,8 @@ class StreamChatPresenter
     with LoadingManager, NavigationManager, UIErrorManager
     implements ChatPresenter {
   final LoadCurrentUser _loadCurrentUser;
-  final CreateConversation _createConversation;
-  final LoadMessages _loadMessages;
-  final SendMessage _sendMessage;
   final SendToDify _sendToDify;
-  final UpdateConversation _updateConversation;
+
   final DifyChatRepository _difyChatRepository;
 
   StreamChatPresenter({
@@ -35,11 +32,7 @@ class StreamChatPresenter
     required UpdateConversation updateConversation,
     required DifyChatRepository difyChatRepository,
   })  : _loadCurrentUser = loadCurrentUser,
-        _createConversation = createConversation,
-        _loadMessages = loadMessages,
-        _sendMessage = sendMessage,
         _sendToDify = sendToDify,
-        _updateConversation = updateConversation,
         _difyChatRepository = difyChatRepository;
 
   // Stream Controllers
@@ -122,6 +115,20 @@ class StreamChatPresenter
       _currentConversation = conversation.toEntity();
       _conversationController.sink.add(_currentConversation);
 
+      // Verifica se precisa restaurar contexto do Dify
+      final difyConversationId =
+          _currentConversation!.metadata['dify_conversation_id'] as String?;
+      if (difyConversationId != null &&
+          !DifyService.conversationCache.containsKey(conversationId)) {
+        // Restaura o mapeamento no cache do Dify
+        DifyService.updateConversationCache('temp', conversationId);
+        // Ou define diretamente se souber o difyConversationId
+        LoggerService.debug(
+          'Restaurando contexto do Dify para conversa: $conversationId',
+          name: 'ChatPresenter',
+        );
+      }
+
       isLoading = LoadingData(isLoading: false);
       LoggerService.debug(
         'Conversa carregada: ${messages.length} mensagens',
@@ -173,181 +180,6 @@ class StreamChatPresenter
         name: 'ChatPresenter',
       );
       _handleError(error);
-    }
-  }
-
-  Future<void> _sendFirstMessage(String content) async {
-    if (content.trim().isEmpty || _currentConversation == null) return;
-
-    try {
-      LoggerService.debug('Enviando primeira mensagem...',
-          name: 'ChatPresenter');
-
-      // 1. Adiciona mensagem do usuário (apenas na UI)
-      final userMessage = MessageEntity(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-        conversationId: _currentConversation!.id,
-        content: content.trim(),
-        type: MessageType.user,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-      );
-
-      _cachedMessages.add(userMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      // 2. Inicia estado "pensando"
-      _startThinkingState();
-
-      // 3. Busca o user ID
-      final currentUser = await _loadCurrentUser.load();
-      final userId = currentUser?.id ?? 'anonymous-mobile';
-
-      // 4. Variáveis para capturar dados do Dify
-      String fullResponse = '';
-      DifyMetadata? finalMetadata;
-
-      _difyStreamSubscription?.cancel();
-      _difyStreamSubscription = _sendToDify
-          .sendMessage(
-        message: content.trim(),
-        conversationId: _currentConversation!.id,
-        userId: userId,
-      )
-          .listen(
-        (difyResponse) {
-          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
-            _stopThinkingState();
-            _startTypingEffect();
-          }
-
-          fullResponse = difyResponse.content;
-
-          if (!_isThinking) {
-            _typingTextController.sink.add(difyResponse.content);
-          }
-
-          if (difyResponse.isComplete && difyResponse.metadata != null) {
-            finalMetadata = difyResponse.metadata;
-          }
-        },
-        onDone: () async {
-          LoggerService.debug('Primera mensagem finalizada, processando...',
-              name: 'ChatPresenter');
-          await _completeFirstConversation(
-              fullResponse, finalMetadata, userId, content);
-        },
-        onError: (error) {
-          LoggerService.error('Erro na primeira mensagem: $error',
-              name: 'ChatPresenter');
-          _stopThinkingState();
-          _stopTypingEffect();
-          _handleError(error);
-        },
-      );
-    } catch (error) {
-      LoggerService.error('Erro ao enviar primeira mensagem: $error',
-          name: 'ChatPresenter');
-      _stopThinkingState();
-      _stopTypingEffect();
-      _handleError(error);
-    }
-  }
-
-  Future<void> _completeFirstConversation(
-    String fullResponse,
-    DifyMetadata? metadata,
-    String userId,
-    String firstMessage,
-  ) async {
-    try {
-      _stopTypingEffect();
-
-      if (fullResponse.trim().isEmpty) {
-        throw DomainError.unexpected;
-      }
-
-      // 1. Cria mensagem do assistente
-      final assistantMessage = MessageEntity(
-        id: 'assistant_${DateTime.now().millisecondsSinceEpoch}',
-        conversationId: _currentConversation!.id,
-        content: fullResponse,
-        type: MessageType.assistant,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-        metadata: metadata?.toMap() ?? {},
-      );
-
-      _cachedMessages.add(assistantMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      // 2. Agora atualiza a conversa com dados reais do Dify
-      if (metadata?.conversationId != null) {
-        await _updateConversationWithDifyData(
-            metadata!.conversationId!, userId, firstMessage);
-      }
-    } catch (error) {
-      LoggerService.error('Erro ao completar primeira conversa: $error',
-          name: 'ChatPresenter');
-      _handleError(error);
-    }
-  }
-
-  Future<void> _updateConversationWithDifyData(
-      String difyConversationId, String userId, String firstMessage) async {
-    try {
-      // 1. Tenta buscar o título do Dify
-      String? difyTitle;
-      if (_sendToDify is DifyService) {
-        final difyService = _sendToDify;
-        difyTitle =
-            await difyService.getConversationTitle(difyConversationId, userId);
-      }
-
-      // 2. Cria conversa definitiva com título do Dify ou fallback
-      final finalConversation = ConversationEntity(
-        id: difyConversationId, // Usa o ID do Dify como ID principal
-        userId: userId,
-        title: difyTitle ?? _generateFallbackTitle(firstMessage),
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        messageCount: 0,
-      );
-
-      // 3. Atualiza o presenter
-      _currentConversation = finalConversation;
-      _conversationController.sink.add(finalConversation);
-
-      // 4. Atualiza as mensagens com o conversation_id correto
-      _cachedMessages = _cachedMessages
-          .map((msg) => MessageEntity(
-                id: msg.id,
-                conversationId:
-                    finalConversation.id, // Atualiza para o ID do Dify
-                content: msg.content,
-                type: msg.type,
-                timestamp: msg.timestamp,
-                status: msg.status,
-                metadata: msg.metadata,
-              ))
-          .toList();
-
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      LoggerService.debug(
-        'Conversa atualizada com dados do Dify: ${finalConversation.id} - "${finalConversation.title}"',
-        name: 'ChatPresenter',
-      );
-
-      // 5. Se não conseguiu pegar o título, agenda uma busca posterior
-      if (difyTitle == null) {
-        _scheduleTitleRefresh(difyConversationId, userId);
-      }
-    } catch (error) {
-      LoggerService.error(
-          'Erro ao atualizar conversa com dados do Dify: $error',
-          name: 'ChatPresenter');
-      // Se falhar, mantém a conversa temporária funcionando
     }
   }
 
@@ -435,316 +267,6 @@ class StreamChatPresenter
     }
   }
 
-  // Envio de mensagem anônima (apenas em memória)
-  Future<void> _sendAnonymousMessage(String content) async {
-    try {
-      LoggerService.debug(
-        'Enviando mensagem anônima: ${content.length > 20 ? content.substring(0, 20) : content}...',
-        name: 'ChatPresenter',
-      );
-
-      // 1. Cria mensagem do usuário em memória
-      final userMessage = MessageEntity(
-        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
-        conversationId: _anonymousSessionId!,
-        content: content.trim(),
-        type: MessageType.user,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-      );
-
-      _cachedMessages.add(userMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      // 2. Inicia estado "pensando"
-      _startThinkingState();
-
-      // 3. Envia para Dify com ID anônimo
-      String fullResponse = '';
-      DifyMetadata? finalMetadata;
-
-      _difyStreamSubscription?.cancel();
-      _difyStreamSubscription = _sendToDify
-          .sendMessage(
-        message: content.trim(),
-        conversationId: _anonymousSessionId!,
-        userId: _anonymousSessionId!,
-      )
-          .listen(
-        (difyResponse) {
-          // Se é primeira resposta, para o "pensando" e inicia "digitando"
-          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
-            _stopThinkingState();
-            _startTypingEffect();
-          }
-
-          LoggerService.debug(
-              'Recebendo resposta anônima: ${difyResponse.content.substring(0, 50)}...',
-              name: 'ChatPresenter');
-
-          fullResponse = difyResponse.content;
-
-          // Só envia para o stream se não está mais pensando
-          if (!_isThinking) {
-            _typingTextController.sink.add(difyResponse.content);
-          }
-
-          if (difyResponse.isComplete && difyResponse.metadata != null) {
-            finalMetadata = difyResponse.metadata;
-          }
-        },
-        onDone: () async {
-          LoggerService.debug('Stream anônimo finalizado',
-              name: 'ChatPresenter');
-
-          await _completeAnonymousAssistantMessage(fullResponse, finalMetadata);
-        },
-        onError: (error) {
-          LoggerService.error('🔴 Erro no stream anônimo: $error',
-              name: 'ChatPresenter');
-          _stopThinkingState();
-          _stopTypingEffect();
-          _handleError(error);
-        },
-      );
-    } catch (error) {
-      LoggerService.error(
-        'Erro ao enviar mensagem anônima: $error',
-        name: 'ChatPresenter',
-      );
-      _stopThinkingState();
-      _stopTypingEffect();
-      _handleError(error);
-    }
-  }
-
-  // Novo método para criar conversa após resposta do Dify
-  Future<void> _createConversationFromDifyResponse({
-    required String userId,
-    required String userMessage,
-    required String difyResponse,
-    required DifyMetadata difyMetadata,
-  }) async {
-    try {
-      LoggerService.debug(
-          'Criando conversa com dados do Dify: ${difyMetadata.conversationId}',
-          name: 'ChatPresenter');
-
-      // Se estamos usando DifyChatRepository
-      final conversation =
-          await _difyChatRepository.createConversationFromDifyResponse(
-        userId: userId,
-        difyConversationId: difyMetadata.conversationId!,
-        difyTitle: _generateTitleFromMessage(
-            userMessage), // Ou usar título do Dify se disponível
-        firstMessage: userMessage,
-        difyResponse: difyResponse,
-      );
-
-      // Atualiza conversa atual
-      _currentConversation = conversation;
-      _conversationController.sink.add(conversation);
-
-      // Recria mensagens com IDs corretos (do Dify)
-      await _recreateMessagesWithDifyIds(
-        conversationId: conversation.id,
-        userMessage: userMessage,
-        difyResponse: difyResponse,
-        difyMetadata: difyMetadata,
-      );
-
-      LoggerService.debug('Nova conversa criada: ${conversation.id}',
-          name: 'ChatPresenter');
-    } catch (error) {
-      LoggerService.error('Erro ao criar conversa com dados do Dify: $error',
-          name: 'ChatPresenter');
-    }
-  }
-
-  // Mensagem autenticada
-  Future<void> _sendAuthenticatedMessage(String content) async {
-    try {
-      LoggerService.debug(
-        'Enviando mensagem autenticada: ${content.length > 20 ? content.substring(0, 20) : content}...',
-        name: 'ChatPresenter',
-      );
-
-      // 1. Adiciona mensagem do usuário no Firebase
-      final userMessage = await _sendMessage.send(
-        conversationId: _currentConversation!.id,
-        content: content.trim(),
-        type: MessageType.user,
-      );
-
-      _cachedMessages.add(userMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      // 2. Inicia estado "pensando"
-      _startThinkingState();
-
-      // 3. Busca o user ID real
-      final currentUser = await _loadCurrentUser.load();
-      final userId = currentUser?.id ?? 'anonymous-mobile';
-
-      LoggerService.debug(
-        'Enviando para Dify - ConversationID: ${_currentConversation!.id}, UserID: $userId',
-        name: 'ChatPresenter',
-      );
-
-      // Variáveis para capturar dados do Dify
-      String fullResponse = '';
-      DifyMetadata? finalMetadata;
-
-      _difyStreamSubscription?.cancel();
-      _difyStreamSubscription = _sendToDify
-          .sendMessage(
-        message: content.trim(),
-        conversationId: _currentConversation!.id,
-        userId: userId,
-      )
-          .listen(
-        (difyResponse) {
-          if (_isThinking && difyResponse.content.trim().isNotEmpty) {
-            _stopThinkingState();
-            _startTypingEffect();
-          }
-
-          LoggerService.debug(
-              'Recebendo resposta: ${difyResponse.content.substring(0, 50)}...',
-              name: 'ChatPresenter');
-
-          fullResponse = difyResponse.content;
-
-          if (!_isThinking) {
-            _typingTextController.sink.add(difyResponse.content);
-          }
-
-          if (difyResponse.isComplete && difyResponse.metadata != null) {
-            finalMetadata = difyResponse.metadata;
-          }
-        },
-        onDone: () async {
-          LoggerService.debug('Stream finalizado, salvando resposta',
-              name: 'ChatPresenter');
-
-          await _completeAssistantMessage(fullResponse, finalMetadata);
-        },
-        onError: (error) {
-          LoggerService.error('🔴 Erro no stream: $error',
-              name: 'ChatPresenter');
-          _stopThinkingState();
-          _stopTypingEffect();
-          _handleError(error);
-        },
-      );
-    } catch (error) {
-      LoggerService.error(
-        'Erro ao enviar mensagem: $error',
-        name: 'ChatPresenter',
-      );
-      _stopThinkingState();
-      _stopTypingEffect();
-      _handleError(error);
-    }
-  }
-
-  // Helper para recriar mensagens com IDs corretos
-  Future<void> _recreateMessagesWithDifyIds({
-    required String conversationId,
-    required String userMessage,
-    required String difyResponse,
-    required DifyMetadata difyMetadata,
-  }) async {
-    try {
-      // Limpa mensagens temporárias
-      _cachedMessages.clear();
-
-      // Cria mensagem do usuário com ID correto
-      final userMessageEntity = MessageEntity(
-        id: '${difyMetadata.messageId}_user', // Base no ID do Dify
-        conversationId: conversationId,
-        content: userMessage,
-        type: MessageType.user,
-        timestamp: DateTime.now().subtract(const Duration(seconds: 1)),
-        status: MessageStatus.sent,
-        metadata: {
-          'dify_conversation_id': difyMetadata.conversationId,
-          'dify_message_id': difyMetadata.messageId,
-        },
-      );
-
-      // Cria mensagem do assistente
-      final assistantMessageEntity = MessageEntity(
-        id: '${difyMetadata.messageId}_assistant',
-        conversationId: conversationId,
-        content: difyResponse,
-        type: MessageType.assistant,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-        metadata: {
-          'dify_conversation_id': difyMetadata.conversationId,
-          'dify_message_id': difyMetadata.messageId,
-        },
-      );
-
-      _cachedMessages.addAll([userMessageEntity, assistantMessageEntity]);
-
-      // Salva no repository para cache usando métodos públicos
-      await _difyChatRepository.addMessagesToCache(
-        conversationId,
-        [userMessageEntity, assistantMessageEntity],
-      );
-
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      LoggerService.debug('Mensagens recriadas com IDs do Dify',
-          name: 'ChatPresenter');
-    } catch (error) {
-      LoggerService.error('Erro ao recriar mensagens: $error',
-          name: 'ChatPresenter');
-    }
-  }
-
-  String _generateTitleFromMessage(String message) {
-    if (message.length <= 50) return message;
-    return '${message.substring(0, 47)}...';
-  }
-
-  // Completa mensagem do assistente anônimo
-  Future<void> _completeAnonymousAssistantMessage(
-    String fullResponse,
-    DifyMetadata? metadata,
-  ) async {
-    try {
-      _stopTypingEffect();
-
-      if (fullResponse.trim().isEmpty) {
-        throw DomainError.unexpected;
-      }
-
-      // Cria mensagem do assistente em memória
-      final assistantMessage = MessageEntity(
-        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
-        conversationId: _anonymousSessionId!,
-        content: fullResponse.trim(),
-        type: MessageType.assistant,
-        timestamp: DateTime.now(),
-        status: MessageStatus.sent,
-        metadata: metadata!.toMap(),
-      );
-
-      _cachedMessages.add(assistantMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      LoggerService.debug('Resposta anônima completa adicionada',
-          name: 'ChatPresenter');
-    } catch (error) {
-      LoggerService.error('Erro ao completar mensagem anônima: $error',
-          name: 'ChatPresenter');
-      _handleError(error);
-    }
-  }
-
   Future<void> _completeMessage(
     String fullResponse,
     DifyMetadata? metadata,
@@ -771,6 +293,10 @@ class StreamChatPresenter
 
       _cachedMessages.add(assistantMessage);
       _messagesController.sink.add(List.from(_cachedMessages));
+
+      // salva no cache, não apenas primeira conversa
+      await _difyChatRepository.addMessagesToCache(
+          _currentConversation!.id, _cachedMessages);
 
       // 2. Se é a primeira conversa, atualiza com dados do Dify
       final isFirstConversation =
@@ -799,6 +325,12 @@ class StreamChatPresenter
         name: 'ChatPresenter',
       );
 
+      //final tempConversationId = _currentConversation!.id;
+
+      if (userId == 'anonymous-mobile') {
+        return;
+      }
+
       // 1. Atualiza conversa
       _currentConversation = _currentConversation!.copyWith(
         id: difyConversationId,
@@ -824,12 +356,34 @@ class StreamChatPresenter
               ))
           .toList();
 
-      // 3. Notifica mudanças
-      _conversationController.sink.add(_currentConversation);
-      _messagesController.sink.add(List.from(_cachedMessages));
+      // // 3. Atualiza cache do Dify para manter contexto
+      // DifyService.updateConversationCache(
+      //     tempConversationId, difyConversationId);
+
+      LoggerService.debug(
+          'Salvando conversa no cache: ${_currentConversation!.id}',
+          name: 'ChatPresenter');
+      await _difyChatRepository
+          .updateConversationInCache(_currentConversation!);
+      LoggerService.debug('Conversa salva no cache com sucesso',
+          name: 'ChatPresenter');
+      await _difyChatRepository.addMessagesToCache(
+          difyConversationId, _cachedMessages);
+
+      // _conversationController.sink.add(_currentConversation);
+      // _messagesController.sink.add(List.from(_cachedMessages));
+
+      // LoggerService.debug(
+      //     'Salvando conversa no cache: ${_currentConversation!.id}',
+      //     name: 'ChatPresenter');
+      // await _difyChatRepository
+      //     .updateConversationInCache(_currentConversation!);
+      // LoggerService.debug('Conversa salva no cache com sucesso',
+      //     name: 'ChatPresenter');
 
       // 4. Busca o título real do Dify
-      _fetchAndUpdateTitle(difyConversationId, userId, firstMessage);
+      _fetchAndUpdateTitle(
+          difyConversationId, userId, firstMessage, _cachedMessages);
 
       LoggerService.debug(
         'Conversa finalizada: $difyConversationId - "${_currentConversation!.title}"',
@@ -841,8 +395,8 @@ class StreamChatPresenter
     }
   }
 
-  void _fetchAndUpdateTitle(
-      String difyConversationId, String userId, String firstMessage) {
+  void _fetchAndUpdateTitle(String difyConversationId, String userId,
+      String firstMessage, List<MessageEntity> cacheMessags) {
     // Busca título em background
     Timer(const Duration(seconds: 2), () async {
       try {
@@ -862,9 +416,19 @@ class StreamChatPresenter
               },
             );
 
+            await _difyChatRepository
+                .updateConversationInCache(_currentConversation!);
+            LoggerService.debug('Conversa salva no cache com sucesso',
+                name: 'ChatPresenter');
+            // await _difyChatRepository.addMessagesToCache(
+            //     difyConversationId, _cachedMessages);
             _conversationController.sink.add(_currentConversation);
+            _messagesController.sink.add(List.from(_cachedMessages));
 
-            LoggerService.debug('Título do Dify carregado: "$title"',
+            await _difyChatRepository.debugCacheContents();
+
+            LoggerService.debug(
+                '------------------------------ Título do Dify carregado: "$title"',
                 name: 'ChatPresenter');
           } else {
             // Fallback para título da pergunta
@@ -902,93 +466,6 @@ class StreamChatPresenter
         _conversationController.sink.add(_currentConversation);
       }
     });
-  }
-
-  Future<String?> _getTitleWithRetry(
-      String difyConversationId, String userId) async {
-    if (_sendToDify is! DifyService) return null;
-
-    final difyService = _sendToDify;
-
-    // Tenta 3 vezes com delay
-    for (int i = 0; i < 3; i++) {
-      try {
-        final title =
-            await difyService.getConversationTitle(difyConversationId, userId);
-        if (title != null) return title;
-
-        // Aguarda antes de tentar novamente
-        if (i < 2) await Future.delayed(Duration(seconds: 1 + i));
-      } catch (error) {
-        LoggerService.debug('Tentativa ${i + 1} falhou: $error',
-            name: 'ChatPresenter');
-      }
-    }
-
-    return null;
-  }
-
-  // COMPLETE ASSISTANT MESSAGE
-  Future<void> _completeAssistantMessage(
-    String fullResponse,
-    DifyMetadata? metadata,
-  ) async {
-    try {
-      _stopTypingEffect();
-
-      if (fullResponse.trim().isEmpty) {
-        throw DomainError.unexpected;
-      }
-
-      final metadataMap = metadata?.toMap() ?? <String, dynamic>{};
-
-      if (metadata != null) {
-        metadataMap.addAll(metadata.toMap());
-
-        // Adiciona os IDs do Dify explicitamente
-        if (metadata.conversationId != null) {
-          metadataMap['dify_conversation_id'] = metadata.conversationId;
-        }
-        if (metadata.messageId != null) {
-          metadataMap['dify_message_id'] = metadata.messageId;
-        }
-      }
-
-      // Salva mensagem com metadata
-      final assistantMessage = await _sendMessage.send(
-        conversationId: _currentConversation!.id,
-        content: fullResponse.trim(),
-        type: MessageType.assistant,
-        metadata: metadataMap.isNotEmpty ? metadataMap : null,
-      );
-
-      _cachedMessages.add(assistantMessage);
-      _messagesController.sink.add(List.from(_cachedMessages));
-
-      // Atualiza conversa com última mensagem
-      if (_currentConversation != null) {
-        final updatedConversation = _currentConversation!.copyWith(
-          updatedAt: DateTime.now(),
-          messageCount: _cachedMessages.length,
-          lastMessage: fullResponse.trim(),
-        );
-
-        await _updateConversation.update(updatedConversation);
-        _currentConversation = updatedConversation;
-        _conversationController.sink.add(updatedConversation);
-      }
-
-      LoggerService.debug(
-        'Resposta salva com metadata: ${metadataMap.keys}',
-        name: 'ChatPresenter',
-      );
-    } catch (error) {
-      LoggerService.error(
-        'Erro ao completar resposta do assistente: $error',
-        name: 'ChatPresenter',
-      );
-      _handleError(error);
-    }
   }
 
   // MÉTODOS: Controle de estados de "pensando" e "digitando"
@@ -1075,6 +552,9 @@ class StreamChatPresenter
     // Limpar cache do Dify se havia conversa ativa
     if (_currentConversation != null) {
       // Assumindo que você vai importar DifyService
+      LoggerService.debug(
+          'Limpando cache para conversa: ${_currentConversation!.id}',
+          name: 'ChatPresenter');
       DifyService.clearConversationCache(_currentConversation!.id);
     }
 
@@ -1094,54 +574,17 @@ class StreamChatPresenter
     _isAnonymousSession = false;
     _anonymousSessionId = null;
 
+    LoggerService.debug('isAnonymousSession: $_isAnonymousSession',
+        name: 'ChatPresenter');
+    LoggerService.debug('anonymousSessionId: $_anonymousSessionId',
+        name: 'ChatPresenter');
     LoggerService.debug('Conversa atual limpa', name: 'ChatPresenter');
-  }
-
-  // Método que retorna título das mensagens
-  String _extractTitleFromMessages(List<MessageEntity> messages) {
-    if (messages.isEmpty) return 'Conversa';
-
-    // Procura primeira mensagem do usuário
-    final firstUserMessage = messages.firstWhere(
-      (m) => m.type == MessageType.user,
-      orElse: () => messages.first,
-    );
-
-    final content = firstUserMessage.content;
-    // Limita o título a 50 caracteres
-    return content.length > 50 ? '${content.substring(0, 47)}...' : content;
   }
 
   String _generateFallbackTitle(String firstMessage) {
     return firstMessage.length > 45
         ? '${firstMessage.substring(0, 45)}...'
         : firstMessage;
-  }
-
-  void _scheduleTitleRefresh(String difyConversationId, String userId) {
-    // Agenda uma busca do título em 3 segundos (tempo para o Dify processar)
-    Timer(const Duration(seconds: 3), () async {
-      try {
-        if (_sendToDify is DifyService) {
-          final difyService = _sendToDify;
-          final title = await difyService.getConversationTitle(
-              difyConversationId, userId);
-
-          if (title != null && _currentConversation?.id == difyConversationId) {
-            // Atualiza apenas o título
-            _currentConversation = _currentConversation!.copyWith(title: title);
-            _conversationController.sink.add(_currentConversation);
-
-            LoggerService.debug('Título atualizado via timer: "$title"',
-                name: 'ChatPresenter');
-          }
-        }
-      } catch (error) {
-        LoggerService.debug('Erro ao buscar título via timer: $error',
-            name: 'ChatPresenter');
-        // Se falhar, mantém o título fallback
-      }
-    });
   }
 
   void dispose() {

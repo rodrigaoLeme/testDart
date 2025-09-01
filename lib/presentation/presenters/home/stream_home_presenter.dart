@@ -31,6 +31,11 @@ class StreamHomePresenter implements HomePresenter {
   List<ConversationEntity> _cachedConversations = [];
   Timer? _syncTimer;
 
+  // Controle de paginação
+  bool _isLoadingMore = false;
+  bool _hasMoreConversations = true;
+  String? _lastConversationId;
+
   // Streams
   @override
   Stream<UserEntity?> get currentUserStream => _currentUserController.stream;
@@ -49,6 +54,11 @@ class StreamHomePresenter implements HomePresenter {
 
   @override
   List<ConversationEntity> get conversations => _cachedConversations;
+
+  @override
+  bool get isLoadingMore => _isLoadingMore;
+  @override
+  bool get hasMoreConversations => _hasMoreConversations;
 
   @override
   Future<void> loadCurrentUser() async {
@@ -121,6 +131,8 @@ class StreamHomePresenter implements HomePresenter {
   @override
   Future<void> loadConversations() async {
     try {
+      _resetPagination();
+
       // Verifica se tem usuário antes de carregar
       if (_currentUser == null) {
         LoggerService.debug(
@@ -137,20 +149,25 @@ class StreamHomePresenter implements HomePresenter {
       );
 
       // cache primeiro
-      final conversations = await _loadConversations.load(limit: 50);
+      final conversations = await _loadConversations.load(limit: 10);
 
       if (conversations.isNotEmpty) {
         _cachedConversations = conversations;
         _conversationsController.sink.add(conversations);
 
+        // Configura paginação
+        _lastConversationId = conversations.last.id;
+        _hasMoreConversations = conversations.length >= 10;
+
         LoggerService.debug(
-          'HomePresenter: ${conversations.length} conversas carregadas',
+          'HomePresenter: ${conversations.length} conversas carregadas (hasMore: $_hasMoreConversations)',
           name: 'HomePresenter',
         );
       } else {
         // Se não tem conversas, limpa o stream
         _cachedConversations = [];
         _conversationsController.sink.add([]);
+        _hasMoreConversations = false;
 
         LoggerService.debug(
           'HomePresenter: Nenhuma conversa encontrada',
@@ -209,6 +226,8 @@ class StreamHomePresenter implements HomePresenter {
     // Adiciona no início da lista
     _cachedConversations.insert(0, conversation);
     _conversationsController.sink.add(List.from(_cachedConversations));
+
+    refreshConversations();
   }
 
   // Limpa conversas (usado no logout)
@@ -293,6 +312,79 @@ class StreamHomePresenter implements HomePresenter {
     }
 
     return false;
+  }
+
+  // Carrega mais conversas
+  @override
+  Future<void> loadMoreConversations() async {
+    if (_isLoadingMore || !_hasMoreConversations || _currentUser == null) {
+      LoggerService.debug(
+        'Não pode carregar mais: loading=$_isLoadingMore, hasMore=$_hasMoreConversations, user=${_currentUser != null}',
+        name: 'HomePresenter',
+      );
+      return;
+    }
+
+    try {
+      _isLoadingMore = true;
+
+      LoggerService.debug(
+        'Carregando mais conversas - lastId: $_lastConversationId',
+        name: 'HomePresenter',
+      );
+
+      // Busca próximas conversas usando lastId
+      final moreConversations = await _loadConversations.load(
+        limit: 5,
+        startAfter: _lastConversationId,
+      );
+
+      if (moreConversations.isNotEmpty) {
+        final newConversations = <ConversationEntity>[];
+
+        for (final newConv in moreConversations) {
+          // Verifica se não é duplicata
+          if (!_cachedConversations
+              .any((existing) => existing.id == newConv.id)) {
+            newConversations.add(newConv);
+          }
+        }
+
+        if (newConversations.isNotEmpty) {
+          _cachedConversations.addAll(newConversations);
+          _conversationsController.sink.add(List.from(_cachedConversations));
+
+          // Atualiza lastId para próxima paginação
+          _lastConversationId = newConversations.last.id;
+
+          LoggerService.debug(
+            'Carregadas mais ${newConversations.length} conversas (total: ${_cachedConversations.length})',
+            name: 'HomePresenter',
+          );
+        }
+
+        // Se retornou menos que o limite, não há mais conversas
+        _hasMoreConversations = moreConversations.length >= 5;
+      } else {
+        _hasMoreConversations = false;
+        LoggerService.debug('Não há mais conversas para carregar',
+            name: 'HomePresenter');
+      }
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao carregar mais conversas: $error',
+        name: 'HomePresenter',
+      );
+    } finally {
+      _isLoadingMore = false;
+    }
+  }
+
+  // Reset da paginação (usado no refresh)
+  void _resetPagination() {
+    _lastConversationId = null;
+    _hasMoreConversations = true;
+    _isLoadingMore = false;
   }
 
   // chamado após login bem-sucedido

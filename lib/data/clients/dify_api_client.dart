@@ -144,7 +144,7 @@ class DifyApiClient {
       LoggerService.debug('Testando conexão com Dify...',
           name: 'DifyApiClient');
 
-      final response = await httpClient.request(
+      await httpClient.request(
         url: '$baseUrl/conversations',
         method: HttpMethod.get,
         headers: _defaultHeaders,

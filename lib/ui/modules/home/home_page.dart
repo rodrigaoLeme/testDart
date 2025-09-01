@@ -257,7 +257,10 @@ class _HomePageState extends State<HomePage>
       widget.chatPresenter.createNewConversation(message);
 
       // Escuta quando a conversa for criada
-      widget.chatPresenter.currentConversationStream.listen((conversation) {
+      widget.chatPresenter.currentConversationStream
+          .where((conversation) => conversation != null)
+          .take(1)
+          .listen((conversation) {
         if (conversation != null) {
           widget.presenter.addNewConversation(conversation);
           _conversationIdToLoad = conversation.id; // Salva o ID

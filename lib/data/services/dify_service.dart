@@ -121,6 +121,25 @@ class DifyService implements SendToDify {
     return '';
   }
 
+  // Atualiza o mapeamento no cache quando o conversationId muda
+  static void updateConversationCache(String oldLocalId, String newDifyId) {
+    // Se existia mapeamento com o ID antigo
+    if (_conversationCache.containsKey(oldLocalId)) {
+      final difyConversationId = _conversationCache[oldLocalId];
+
+      // Remove o mapeamento antigo
+      _conversationCache.remove(oldLocalId);
+
+      // Adiciona o novo mapeamento correto
+      _conversationCache[newDifyId] = difyConversationId!;
+
+      LoggerService.debug(
+        'Cache do Dify atualizado: $oldLocalId -> $newDifyId (DifyId: $difyConversationId)',
+        name: 'DifyService',
+      );
+    }
+  }
+
   Stream<DifyStreamResponse> _handleStreamingWithLocalSimulation(
       String sseData, String localConversationId) async* {
     String fullAnswer = '';

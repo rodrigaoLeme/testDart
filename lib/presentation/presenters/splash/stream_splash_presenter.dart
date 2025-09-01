@@ -42,7 +42,6 @@ class StreamSplashPresenter with NavigationManager implements SplashPresenter {
       final futures = [
         _preloadFAQ(),
         _preloadSuggestions(),
-        //_preloadConversations(),
         _preloadDifyData(),
       ];
 
@@ -82,58 +81,14 @@ class StreamSplashPresenter with NavigationManager implements SplashPresenter {
     }
   }
 
-  Future<void> _preloadConversations() async {
-    try {
-      LoggerService.debug('Pré-carregando Conversas do cache',
-          name: 'SplashPreload');
-
-      // Carrega do SharedPreferences
-      final conversations = await loadConversations.load(limit: 50);
-
-      LoggerService.debug(
-          'Conversas pré-carregadas: ${conversations.length} encontradas',
-          name: 'SplashPreload');
-
-      // Agenda sync
-      _syncConversationsInBackground();
-    } catch (error) {
-      LoggerService.debug(
-          'Erro ao pré-carregar Conversas (usuário anônimo ou sem histórico): $error',
-          name: 'SplashPreload');
-      // Não é crítico - usuário pode ser anônimo ou não ter conversas
-    }
-  }
-
-  void _syncConversationsInBackground() {
-    Future.delayed(
-      const Duration(milliseconds: 500),
-      () async {
-        try {
-          LoggerService.debug(
-              'Iniciando sincronização de conversas com Firebase...',
-              name: 'SplashPreload');
-
-          await loadConversations.load(limit: 50);
-
-          LoggerService.debug('Sincronização com Firebase concluída',
-              name: 'SplashPreload');
-        } catch (error) {
-          LoggerService.debug(
-              'Erro na sincronização em background (não crítico): $error',
-              name: 'SplashPreload');
-        }
-      },
-    );
-  }
-
   Future<void> _preloadDifyData() async {
     try {
       LoggerService.debug('Pré-carregando dados do Dify...',
           name: 'SplashPreload');
 
       final syncResult = await difySyncService.fullSync(
-        conversationsLimit: 10, // Comece com 50 para testar
-        messagesPerConversation: 50, // 50 mensagens por conversa
+        conversationsLimit: 10,
+        messagesPerConversation: 50,
         onProgress: (progress) {
           LoggerService.debug('Dify sync: $progress', name: 'SplashPreload');
         },
