@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../domain/entities/login/login_provider.dart';
 import '../../../presentation/presenters/login/login_presenter.dart';
@@ -52,6 +53,21 @@ class _LoginPageState extends State<LoginPage>
     handleMainError(context, widget.presenter.mainErrorStream);
 
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: AppColors.darkBlue,
+        elevation: 0,
+        leading: IconButton(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            widget.presenter.goBack();
+          },
+          icon: const Icon(
+            Icons.arrow_back,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
       backgroundColor: AppColors.darkBlue,
       body: SafeArea(
         bottom: false,
@@ -62,7 +78,7 @@ class _LoginPageState extends State<LoginPage>
               const SizedBox(height: 70),
               // Logo
               Container(
-                width: 200,
+                width: 300,
                 height: 170,
                 padding: const EdgeInsets.all(8),
                 decoration: const BoxDecoration(
@@ -70,8 +86,7 @@ class _LoginPageState extends State<LoginPage>
                   shape: BoxShape.circle,
                 ),
                 child: Image.asset(
-                  'lib/ui/assets/images/logo/logo7chat.png',
-                  fit: BoxFit.contain,
+                  'lib/ui/assets/images/logo/7chat_1024.png',
                 ),
               ),
               const SizedBox(height: 24),

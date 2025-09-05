@@ -1,4 +1,3 @@
-// Model das conversas retornadas pela API do Dify
 class DifyConversationModel {
   final String id;
   final String name;
@@ -44,10 +43,8 @@ class DifyConversationModel {
 
   static DateTime _parseTimestamp(dynamic timestamp) {
     if (timestamp is int) {
-      // Unix timestamp (seconds) - confirmed from real API response
       return DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
     } else if (timestamp is String) {
-      // ISO string fallback
       return DateTime.parse(timestamp);
     }
     throw ArgumentError('Invalid timestamp format: $timestamp');

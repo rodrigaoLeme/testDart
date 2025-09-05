@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import '../../../domain/entities/entities.dart';
+import '../../../main/factories/components/whatsapp_launcher_factory.dart';
+import '../../../main/services/logger_service.dart';
 import '../../../presentation/presenters/settings/settings_presenter.dart';
 import '../../../share/utils/app_colors.dart';
 import '../../components/components.dart';
@@ -113,12 +115,12 @@ class _SettingsPageState extends State<SettingsPage>
                     UserProfileHeader(user: user),
                     const SizedBox(height: 32),
                     _buildLanguageOption(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
                     _buildProviderOption(user),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 10),
                     _buildFAQOption(),
-                    const SizedBox(height: 16),
-                    _buildItemOption(),
+                    const SizedBox(height: 10),
+                    _buildWhatsappOption(),
                     const SizedBox(height: 100),
                   ],
                 ),
@@ -224,11 +226,14 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildItemOption() {
-    return SettingsOptionTile(
-      icon: 'info-circle.png',
-      title: 'Item',
-      onTap: () {},
+  Widget _buildWhatsappOption() {
+    return makeSupportWhatsAppTile(
+      onSuccess: () {
+        LoggerService.debug('WhatsApp abriu com sucesso', name: 'SettingsPage');
+      },
+      onError: () {
+        LoggerService.error('Falha ao abrir WhatsApp', name: 'SettingsPage');
+      },
     );
   }
 

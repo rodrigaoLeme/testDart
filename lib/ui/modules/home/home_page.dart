@@ -9,7 +9,6 @@ import '../../../main/routes_app.dart';
 import '../../../main/services/logger_service.dart';
 import '../../../presentation/presenters/chat/chat_presenter.dart';
 import '../../../presentation/presenters/home/home_presenter.dart';
-import '../../../share/ds/ds_logo.dart';
 import '../../../share/utils/app_colors.dart';
 import '../../components/components.dart';
 import '../../helpers/helpers.dart';
@@ -108,13 +107,10 @@ class _HomePageState extends State<HomePage>
   }
 
   void _tryLoadCachedSuggestions() {
-    // Se já foi carregado no splash, o stream já vai ter dados
-    // Se não foi, vai usar as suggestions padrão sem loading
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Pequeno delay para permitir que o presenter seja configurado
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted && widget.presenter.suggestions.isEmpty) {
-          // Só carrega se realmente não tem nada (rare case)
           widget.presenter.loadSuggestions();
         }
       });
@@ -124,7 +120,6 @@ class _HomePageState extends State<HomePage>
   // Escuta mudanças de autenticação
   void _listenToUserChanges() {
     _userSubscription = widget.presenter.currentUserStream.listen((user) {
-      // Se não tinha usuário e agora tem (login)
       if (_previousUser == null && user != null) {
         LoggerService.debug(
           'Usuário fez login, carregando histórico...',
@@ -135,7 +130,6 @@ class _HomePageState extends State<HomePage>
         widget.presenter.loadConversations();
       }
 
-      // Se tinha usuário e agora não tem (logout)
       if (_previousUser != null && user == null) {
         LoggerService.debug(
           'Usuário fez logout, limpando histórico...',
@@ -144,8 +138,6 @@ class _HomePageState extends State<HomePage>
 
         // Limpa o chat atual se houver
         widget.chatPresenter.clearCurrentConversation();
-
-        // O histórico será limpo automaticamente pelo presenter
       }
 
       _previousUser = user;
@@ -220,6 +212,13 @@ class _HomePageState extends State<HomePage>
 
   void _handleSendMessage() {
     final message = _controller.text.trim();
+
+    if (message.length < 10) {
+      // Mostra feedback visual para o usuário
+      _showMinLengthWarning();
+      return;
+    }
+
     if (message.isEmpty) return;
 
     // FECHA O TECLADO IMEDIATAMENTE
@@ -295,6 +294,52 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  void _showMinLengthWarning() {
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 80,
+        left: 20,
+        right: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'A pergunta deve ter pelo menos 10 caracteres',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(entry);
+
+    // Remove depois de 3 segundos
+    Future.delayed(const Duration(seconds: 3)).then((_) => entry.remove());
+  }
+
   // NOVA CONVERSA (chamado pelo drawer)
   void startNewConversation() {
     setState(() {
@@ -352,6 +397,12 @@ class _HomePageState extends State<HomePage>
               homePresenter: widget.presenter,
               onNewConversation: startNewConversation,
               onOpenConversation: _openExistingConversation,
+              onDeleteCurrentConversation: (deletedConversationId) {
+                if (widget.chatPresenter.currentConversation?.id ==
+                    deletedConversationId) {
+                  startNewConversation();
+                }
+              },
             ),
             onDrawerChanged: (isOpened) {
               if (!isOpened) {
@@ -378,6 +429,9 @@ class _HomePageState extends State<HomePage>
                     ),
                   ),
 
+                const SizedBox(
+                  height: 13,
+                ),
                 // INPUT (sempre presente)
                 _buildMessageInput(),
               ],
@@ -441,7 +495,7 @@ class _HomePageState extends State<HomePage>
                   return const SizedBox.shrink();
                 }
 
-                // 🚀 SÓ FAZ AUTO-SCROLL SE PERMITIDO
+                // SÓ FAZ AUTO-SCROLL SE PERMITIDO
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_autoScrollEnabled &&
                       !_shouldScrollToNewMessage &&
@@ -468,9 +522,19 @@ class _HomePageState extends State<HomePage>
                           final message = messages[index];
                           final isLastMessage = index == messages.length - 1;
 
+                          String? relatedUserQuery;
+                          if (message.type == MessageType.assistant &&
+                              index > 0) {
+                            final previousMessage = messages[index - 1];
+                            if (previousMessage.type == MessageType.user) {
+                              relatedUserQuery = previousMessage.content;
+                            }
+                          }
+
                           return MessageBubble(
                             message: message,
                             isLastMessage: isLastMessage,
+                            relatedUserQuery: relatedUserQuery,
                           );
                         }
 
@@ -630,7 +694,7 @@ class _HomePageState extends State<HomePage>
               _userIsScrolling = false;
               _autoScrollEnabled = true;
             });
-            LoggerService.debug('✅ Auto-scroll reabilitado',
+            LoggerService.debug('Auto-scroll reabilitado',
                 name: 'ScrollControl');
           }
         }
@@ -689,9 +753,14 @@ class _HomePageState extends State<HomePage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Spacer(),
-          const DSLogo(type: DSLogoType.white, widht: 140),
-          const SizedBox(height: 30),
+          const SizedBox(
+            height: 40,
+          ),
+          Image.asset(
+            'lib/ui/assets/images/logo/7chat_1024.png',
+            width: 280,
+          ),
+          const SizedBox(height: 42),
           const Text(
             '7Chat.ai',
             style: TextStyle(
@@ -800,21 +869,31 @@ class _HomePageState extends State<HomePage>
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
                   ),
+                  onChanged: (value) {
+                    setState(
+                      () {
+                        isTyping = value.trim().isNotEmpty;
+                      },
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 8),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
-                  color: isTyping ? AppColors.primary : AppColors.lightGray,
+                  color: _canSendMessage()
+                      ? AppColors.primary
+                      : AppColors.lightGray,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: IconButton(
-                  onPressed: isTyping ? _handleSendMessage : null,
+                  onPressed: _canSendMessage() ? _handleSendMessage : null,
                   icon: Icon(
                     Icons.send,
-                    color:
-                        isTyping ? AppColors.darkBlue : AppColors.textSecondary,
+                    color: _canSendMessage()
+                        ? AppColors.darkBlue
+                        : AppColors.textSecondary,
                     size: 20,
                   ),
                 ),
@@ -824,5 +903,10 @@ class _HomePageState extends State<HomePage>
         ),
       ),
     );
+  }
+
+  bool _canSendMessage() {
+    final text = _controller.text.trim();
+    return text.length >= 10;
   }
 }

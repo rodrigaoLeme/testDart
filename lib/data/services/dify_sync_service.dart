@@ -11,7 +11,7 @@ import '../models/dify/dify.dart';
 import '../repositories/dify_chat_repository.dart';
 import 'dify_service.dart';
 
-/// Service responsável por sincronizar completamente os dados do Dify no splash
+// Service responsável por sincronizar completamente os dados do Dify no splash
 class DifySyncService {
   final DifyApiClient difyApiClient;
   final DifyChatRepository difyChatRepository;
@@ -23,7 +23,7 @@ class DifySyncService {
     required this.loadCurrentUser,
   });
 
-  /// Sincronização completa: limpa cache + carrega tudo do Dify
+  // Sincronização completa: limpa cache + carrega tudo do Dify
   Future<DifySyncResult> fullSync({
     int conversationsLimit = 100,
     int messagesPerConversation = 100,
@@ -182,7 +182,7 @@ class DifySyncService {
     }
   }
 
-  /// Sincronização incremental (apenas conversas novas/atualizadas)
+  // Sincronização incremental (apenas conversas novas/atualizadas)
   Future<DifySyncResult> incrementalSync({
     int limit = 20,
     Function(String)? onProgress,
@@ -260,7 +260,7 @@ class DifySyncService {
     }
   }
 
-  /// Testa conexão com o Dify
+  // Testa conexão com o Dify
   Future<bool> testConnection() async {
     try {
       LoggerService.debug('Testando conexão com Dify...',
@@ -304,7 +304,7 @@ class DifySyncService {
     }
   }
 
-  /// Merge inteligente de conversas (prioriza mais recentes)
+  // Merge inteligente de conversas (prioriza mais recentes)
   List<ConversationModel> _mergeConversations(
     List<ConversationModel> existing,
     List<ConversationModel> newConversations,
@@ -329,7 +329,7 @@ class DifySyncService {
   }
 }
 
-/// Resultado da sincronização
+// Resultado da sincronização
 class DifySyncResult {
   final bool success;
   final int conversationsCount;

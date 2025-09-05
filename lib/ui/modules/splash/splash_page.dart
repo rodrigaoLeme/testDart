@@ -47,24 +47,10 @@ class _SplashPageState extends State<SplashPage> with NavigationManager {
                 child: Hero(
                   tag: 'logo',
                   child: DSLogo(
-                    widht: 120,
+                    widht: 200,
                   ),
                 ),
               ),
-              SizedBox(height: 20),
-              Center(
-                child: Hero(
-                  tag: 'text',
-                  child: Text(
-                    '7Chat.ai',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w600, // SemiBold
-                      fontSize: 24,
-                    ),
-                  ),
-                ),
-              )
             ],
           ),
         ),

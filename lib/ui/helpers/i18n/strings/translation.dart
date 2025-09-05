@@ -41,6 +41,11 @@ abstract class Translation {
   String get msgUnexpectedError;
   String get feedbackSuccess;
   String get feedbackError;
+  String get msgSureDeleteConversation;
+  String get msgActionCannotBeUndone;
+  String get msgDeletingConversation;
+  String get conversationDeletedSuccessfully;
+  String get errorDeletingConversation;
   // String get have8Characters;
   // String get savedChanges;
   // String get updatedSuccessfully;
@@ -56,6 +61,7 @@ abstract class Translation {
   String get logoutBtn;
   String get loginBtn;
   String get submit;
+  String get delete;
   // String get deleteAccount;
   // String get yes;
   // String get proceed;
@@ -92,6 +98,10 @@ abstract class Translation {
   String get describeTheProblem;
   String get messageExample;
   String get thinking;
+  String get deleteConversation;
+  String get hopeBot;
+  String get whatsAppNotAvailable;
+  String get unableToOpenWhatsApp;
 
 //PAGES
   // String get nutrition;

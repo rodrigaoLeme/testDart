@@ -54,7 +54,6 @@ class DifyApiClient {
         name: 'DifyApiClient',
       );
 
-      // Seu HttpClient já retorna Map<String, dynamic> parseado
       if (response is Map<String, dynamic>) {
         final result = DifyConversationsResponse.fromJson(response);
 
@@ -80,7 +79,7 @@ class DifyApiClient {
     }
   }
 
-  /// GET /messages - Lista mensagens de uma conversa específica
+  // Lista mensagens de uma conversa específica
   Future<DifyMessagesResponse> getMessages({
     required String userId,
     required String conversationId,
@@ -112,7 +111,6 @@ class DifyApiClient {
         name: 'DifyApiClient',
       );
 
-      // Seu HttpClient já retorna Map<String, dynamic> parseado
       if (response is Map<String, dynamic>) {
         final result = DifyMessagesResponse.fromJson(response);
 
@@ -138,7 +136,40 @@ class DifyApiClient {
     }
   }
 
-  /// Testa conexão com a API do Dify
+  // Deleta uma conversa
+  Future<void> deleteConversation({
+    required String conversationId,
+    required String userId,
+  }) async {
+    try {
+      LoggerService.debug(
+        'Deletando conversa - ConversationID: $conversationId, User: $userId',
+        name: 'DifyApiClient',
+      );
+
+      await httpClient.request(
+        url: '$baseUrl/conversations/$conversationId',
+        method: HttpMethod.delete,
+        headers: _defaultHeaders,
+        body: {
+          'user': userId,
+        },
+      );
+
+      LoggerService.debug(
+        'Conversa deletada com sucesso: $conversationId',
+        name: 'DifyApiClient',
+      );
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao deletar conversa: $error',
+        name: 'DifyApiClient',
+      );
+      throw DomainError.networkError;
+    }
+  }
+
+  // Testa conexão com a API do Dify
   Future<bool> testConnection() async {
     try {
       LoggerService.debug('Testando conexão com Dify...',

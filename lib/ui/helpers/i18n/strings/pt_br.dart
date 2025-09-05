@@ -29,6 +29,22 @@ class PtBr implements Translation {
       'Feedback enviado com sucesso! Obrigado por nos ajudar a melhorar.';
   @override
   String get feedbackError => 'Erro ao enviar feedback. Tente novamente.';
+  @override
+  String get msgSureDeleteConversation =>
+      'Tem certeza que deseja deletar a conversa';
+  @override
+  String get msgActionCannotBeUndone => 'Esta ação não pode ser desfeita.';
+  @override
+  String get msgDeletingConversation => 'Deletando conversa...';
+  @override
+  String get conversationDeletedSuccessfully => 'Conversa deletada com sucesso';
+  @override
+  String get errorDeletingConversation => 'Erro ao deletar conversa';
+  @override
+  String get whatsAppNotAvailable => 'WhatsApp não disponível';
+  @override
+  String get unableToOpenWhatsApp =>
+      'Não foi possível abrir o WhatsApp. Verifique se o aplicativo está instalado.';
 
   //BUTTON
   @override
@@ -41,6 +57,8 @@ class PtBr implements Translation {
   String get loginBtn => 'Login';
   @override
   String get submit => 'Enviar';
+  @override
+  String get delete => 'Deletar';
 
   // SHARED
   @override
@@ -81,6 +99,8 @@ class PtBr implements Translation {
       'Ex: A resposta está incorreta, não responde a pergunta, informação desatualizada...';
   @override
   String get thinking => 'Pensando';
+  @override
+  String get deleteConversation => 'Deletar conversa';
 
   //PAGES
   @override
@@ -129,6 +149,8 @@ class PtBr implements Translation {
       'O assistente de IA adventista pode cometer erros.\nVerifique informações importantes.';
   @override
   String get messagePlaceholder => 'Digite sua mensagem...';
+  @override
+  String get hopeBot => 'Esperança';
 
   // Login Social
   @override

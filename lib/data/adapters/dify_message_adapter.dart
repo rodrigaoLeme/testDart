@@ -32,8 +32,7 @@ class DifyMessageAdapter {
         conversationId: difyMessage.conversationId,
         content: difyMessage.answer,
         type: MessageType.assistant,
-        timestamp: difyMessage.createdAt
-            .add(const Duration(seconds: 1)), // Ligeiramente depois
+        timestamp: difyMessage.createdAt.add(const Duration(seconds: 1)),
         status: MessageStatus.sent,
         metadata: {
           'dify_message_id': difyMessage.id,

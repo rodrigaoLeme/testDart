@@ -16,3 +16,5 @@ export './spinner_dialog.dart';
 export './success_message.dart';
 export './suggestion_chip.dart';
 export './user_profile_header.dart';
+export './whatsapp_launcher_button.dart';
+export './whatsapp_settings_tile.dart';

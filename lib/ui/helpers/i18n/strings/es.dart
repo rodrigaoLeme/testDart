@@ -30,6 +30,23 @@ class Es implements Translation {
   @override
   String get feedbackError =>
       'Error al enviar el comentario. Inténtalo de nuevo.';
+  @override
+  String get msgSureDeleteConversation =>
+      '¿Estás seguro de que deseas eliminar la conversación?';
+  @override
+  String get msgActionCannotBeUndone => 'Esta acción no se puede deshacer.';
+  @override
+  String get msgDeletingConversation => 'Borrando conversación...';
+  @override
+  String get conversationDeletedSuccessfully =>
+      'Conversación eliminada exitosamente';
+  @override
+  String get errorDeletingConversation => 'Error al eliminar la conversación';
+  @override
+  String get whatsAppNotAvailable => 'WhatsApp no ​​disponible';
+  @override
+  String get unableToOpenWhatsApp =>
+      'No se puede abrir WhatsApp. Comprueba si la aplicación está instalada.';
 
   //BUTTON
   @override
@@ -42,6 +59,8 @@ class Es implements Translation {
   String get loginBtn => 'Login';
   @override
   String get submit => 'Enviar';
+  @override
+  String get delete => 'Borrar';
 
   // SHARED
   @override
@@ -82,6 +101,8 @@ class Es implements Translation {
       'Ej: La respuesta es incorrecta, no responde a la pregunta, información desactualizada...';
   @override
   String get thinking => 'Pensando';
+  @override
+  String get hopeBot => 'Esperanza';
 
   //PAGES
   @override
@@ -130,6 +151,8 @@ class Es implements Translation {
       'El asistente de inteligencia artificial adventista\npuede cometer errores.\nVerifique información importante.';
   @override
   String get messagePlaceholder => 'Escribe tu mensaje...';
+  @override
+  String get deleteConversation => 'Eliminar conversación';
 
   // Social Login
   @override

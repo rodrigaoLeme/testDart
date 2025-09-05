@@ -17,7 +17,8 @@ extension LoginProviderExtension on LoginProvider {
       providers.add(LoginProvider.apple);
     }
 
-    providers.add(LoginProvider.facebook);
+    // será add em outro momento.
+    //providers.add(LoginProvider.facebook);
     return providers;
   }
 

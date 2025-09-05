@@ -18,7 +18,7 @@ class CacheDebugHelper {
       if (syncMetadata != null) {
         final json = jsonDecode(syncMetadata);
         LoggerService.debug(
-          '📊 Sync Metadata:\n${_formatJson(json)}',
+          'Sync Metadata:\n${_formatJson(json)}',
           name: 'CacheDebug',
         );
       }
@@ -28,7 +28,7 @@ class CacheDebugHelper {
       if (conversations != null) {
         final json = jsonDecode(conversations);
         LoggerService.debug(
-          '💬 Conversas (${(json as List).length}):\n${_formatJson(json)}',
+          'Conversas (${(json as List).length}):\n${_formatJson(json)}',
           name: 'CacheDebug',
         );
       }
@@ -37,7 +37,7 @@ class CacheDebugHelper {
       final difyCache = await _storage.fetch('dify_conversation_cache');
       if (difyCache != null) {
         LoggerService.debug(
-          '🤖 Dify Cache:\n$difyCache',
+          'Dify Cache:\n$difyCache',
           name: 'CacheDebug',
         );
       }
@@ -87,7 +87,7 @@ class CacheDebugHelper {
       );
 
       LoggerService.debug(
-        '✅ Cache exportado para: ${file.path}',
+        'Cache exportado para: ${file.path}',
         name: 'CacheDebug',
       );
     } catch (error) {
@@ -110,19 +110,19 @@ class CacheDebugHelper {
     if (conversations) {
       await _storage.delete('dify_conversations_cache');
       await _storage.delete('conversations_cache');
-      LoggerService.debug('🗑️ Cache de conversas limpo', name: 'CacheDebug');
+      LoggerService.debug('Cache de conversas limpo', name: 'CacheDebug');
     }
 
     if (syncMetadata) {
       await _storage.delete('dify_sync_metadata');
       await _storage.delete('conversations_last_sync');
-      LoggerService.debug('🗑️ Metadata de sync limpo', name: 'CacheDebug');
+      LoggerService.debug('Metadata de sync limpo', name: 'CacheDebug');
     }
 
     if (messages) {
       // Limpa todas as mensagens em cache
       await _clearMessagesCache();
-      LoggerService.debug('🗑️ Cache de mensagens limpo', name: 'CacheDebug');
+      LoggerService.debug('Cache de mensagens limpo', name: 'CacheDebug');
     }
   }
 
@@ -144,16 +144,13 @@ class CacheDebugHelper {
       // Limpa mensagens
       await _clearMessagesCache();
 
-      LoggerService.debug('🗑️ TODO o cache foi limpo', name: 'CacheDebug');
+      LoggerService.debug('TODO o cache foi limpo', name: 'CacheDebug');
     } catch (error) {
       LoggerService.error('Erro ao limpar cache: $error', name: 'CacheDebug');
     }
   }
 
   static Future<void> _clearMessagesCache() async {
-    // Como não temos acesso direto às SharedPreferences,
-    // precisaríamos iterar por todas as keys com prefixo 'dify_messages_'
-    // Por enquanto, isso precisa ser implementado no SharedPreferencesStorageAdapter
     LoggerService.debug('Limpando cache de mensagens...', name: 'CacheDebug');
   }
 
@@ -166,7 +163,6 @@ class CacheDebugHelper {
   }
 
   static Future<Directory> _getDocumentsDirectory() async {
-    // Implementação simplificada - em produção use path_provider
     if (Platform.isIOS) {
       return Directory.systemTemp;
     } else {
@@ -189,11 +185,8 @@ class CacheDebugHelper {
         conversationCount = list.length;
       }
 
-      // Estima mensagens (precisa implementar listagem de keys)
-      // Por enquanto, só mostra o que conseguimos
-
       LoggerService.debug(
-        '📊 Cache Stats:\n'
+        'Cache Stats:\n'
         '  - Total: ${_formatBytes(totalSize)}\n'
         '  - Conversas: $conversationCount\n'
         '  - Mensagens: ~$messageCount',

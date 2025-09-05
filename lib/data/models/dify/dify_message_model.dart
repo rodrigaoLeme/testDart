@@ -1,4 +1,3 @@
-// Model de uma mensagem retornada pela API do Dify
 class DifyMessageModel {
   final String id;
   final String conversationId;
@@ -89,7 +88,6 @@ class DifyMessageModel {
   }
 }
 
-// Arquivo anexado a mensagem
 class DifyMessageFile {
   final String id;
   final String type;

@@ -11,4 +11,5 @@ abstract class LoginPresenter {
   Future<void> signInWithApple();
   Future<void> signInWithMicrosoft();
   Future<void> signInWithFacebook();
+  Future<void> goBack();
 }

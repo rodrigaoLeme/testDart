@@ -66,12 +66,7 @@ class DifyService implements SendToDify {
         body: request.toJson(),
       );
 
-      //yield* _handleBlockingResponse(response);
-
       if (response is String) {
-        // Usa o streaming real do Dify
-        //yield* _handleRealDifyStreaming(response, conversationId);
-
         yield* _handleStreamingWithLocalSimulation(response, conversationId);
       }
     } catch (error, stackTrace) {
@@ -377,6 +372,48 @@ class DifyService implements SendToDify {
       'Mapeamento manual criado: $localConversationId → $difyConversationId',
       name: 'DifyService',
     );
+  }
+
+  // Deleta uma conversa no Dify
+  static Future<void> deleteConversation({
+    required String conversationId,
+    required String userId,
+    required HttpClient httpClient,
+    required String apiKey,
+    required String baseUrl,
+  }) async {
+    try {
+      LoggerService.debug(
+        'DifyService: Deletando conversa $conversationId para usuário $userId',
+        name: 'DifyService',
+      );
+
+      await httpClient.request(
+        url: '$baseUrl/conversations/$conversationId',
+        method: HttpMethod.delete,
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: {
+          'user': userId,
+        },
+      );
+
+      // Remove do cache local também
+      _conversationCache.remove(conversationId);
+
+      LoggerService.debug(
+        'Conversa deletada e removida do cache: $conversationId',
+        name: 'DifyService',
+      );
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao deletar conversa no Dify: $error',
+        name: 'DifyService',
+      );
+      throw DomainError.networkError;
+    }
   }
 
   // Método para verificar se tem mapeamento

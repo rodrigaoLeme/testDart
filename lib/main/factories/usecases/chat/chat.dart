@@ -1,4 +1,5 @@
 export './create_conversation_factory.dart';
+export './delete_conversation_factory.dart';
 export './load_conversations_factory.dart';
 export './load_messages_factory.dart';
 export './send_message_factory.dart';

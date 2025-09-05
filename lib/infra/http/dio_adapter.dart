@@ -62,7 +62,8 @@ class DioAdapter implements HttpClient {
               await client.put(finalUri, options: option, data: body);
           break;
         case HttpMethod.delete:
-          futureResponse = await client.delete(finalUri, options: option);
+          futureResponse =
+              await client.delete(finalUri, options: option, data: body);
           break;
         default:
           throw HttpError.serverError;

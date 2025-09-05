@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:seven_chat_app/main/services/logger_service.dart';
 import 'package:seven_chat_app/ui/components/user_menu_button.dart';
 
 import '../../domain/entities/entities.dart';
@@ -9,6 +8,7 @@ import '../../main/routes_app.dart';
 import '../../presentation/presenters/home/home_presenter.dart';
 import '../../share/utils/app_colors.dart';
 import '../helpers/helpers.dart';
+import 'components.dart';
 import 'drawer_language_button.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -16,12 +16,14 @@ class AppDrawer extends StatelessWidget {
   final VoidCallback? onNewConversation;
   final Function(String)? onOpenConversation;
   final HomePresenter? homePresenter;
+  final Function(String)? onDeleteCurrentConversation;
   const AppDrawer({
     super.key,
     this.currentUser,
     this.onNewConversation,
     this.onOpenConversation,
     this.homePresenter,
+    this.onDeleteCurrentConversation,
   });
 
   @override
@@ -326,7 +328,7 @@ class AppDrawer extends StatelessWidget {
                   // Conversas normais
                   if (index < conversations.length) {
                     final conversation = conversations[index];
-                    return _buildConversationItem(conversation);
+                    return _buildConversationItem(conversation, context);
                   }
 
                   // Indicador de loading
@@ -357,7 +359,8 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildConversationItem(ConversationEntity conversation) {
+  Widget _buildConversationItem(
+      ConversationEntity conversation, BuildContext context) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -370,8 +373,7 @@ class AppDrawer extends StatelessWidget {
           },
           onLongPress: () {
             HapticFeedback.mediumImpact();
-            // mostrar opções (deletar, renomear, etc)
-            _showConversationOptions(conversation);
+            _showConversationOptions(conversation, context);
           },
           borderRadius: BorderRadius.circular(8),
           child: Container(
@@ -403,6 +405,11 @@ class AppDrawer extends StatelessWidget {
     } else {
       return Column(
         children: [
+          WhatsAppLauncherButton(
+            phoneNumber: '5512982000062',
+            icon: 'esperanca.png',
+            title: R.string.hopeBot,
+          ),
           const DrawerLanguageButton(),
           _buildBottomAction(
             icon: 'faq.png',
@@ -469,11 +476,199 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  void _showConversationOptions(ConversationEntity conversation) {
-    // TODO: @rodrigo.leme Implementar modal com opções
-    // - Deletar conversa
-    // - Renomear conversa
-    // - Exportar conversa
-    LoggerService.debug('Chamando long press na conversa', name: 'appDrawer');
+  void _showConversationOptions(
+      ConversationEntity conversation, BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.darkBlue,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle do modal
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.lightBlue,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // Título da conversa
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  conversation.title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Opção de deletar
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.red,
+                ),
+                title: Text(
+                  R.string.deleteConversation,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Poppins',
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(context).pop(); // Fecha o modal
+                  _confirmDeleteConversation(conversation, context);
+                },
+              ),
+
+              // Cancelar
+              ListTile(
+                leading: const Icon(
+                  Icons.cancel_outlined,
+                  color: AppColors.textPrimary,
+                ),
+                title: Text(
+                  R.string.cancel,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Poppins',
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteConversation(
+      ConversationEntity conversation, BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.darkBlue,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          title: Text(
+            R.string.deleteConversation,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Poppins',
+            ),
+          ),
+          content: Text(
+            '${R.string.msgSureDeleteConversation} "${conversation.title}"?\n\n${R.string.msgActionCannotBeUndone}.',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontFamily: 'Poppins',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                R.string.cancel,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+
+                try {
+                  // Mostra loading
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        R.string.msgDeletingConversation,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                      backgroundColor: AppColors.lightBlue,
+                    ),
+                  );
+
+                  // Deleta a conversa
+                  homePresenter?.deleteConversation(conversation.id);
+
+                  // Verifica se é a conversa atual aberta
+                  if (onDeleteCurrentConversation != null) {
+                    onDeleteCurrentConversation!(conversation.id);
+                  }
+
+                  // Sucesso
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        R.string.conversationDeletedSuccessfully,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                      backgroundColor: AppColors.darkBlue,
+                    ),
+                  );
+                } catch (error) {
+                  // Erro
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${R.string.errorDeletingConversation}: $error',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: Text(
+                R.string.delete,
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

@@ -108,4 +108,9 @@ class StreamLoginPresenter
         mainError = UIError.unexpected;
     }
   }
+
+  @override
+  Future<void> goBack() async {
+    navigateTo = NavigationData(route: Routes.home, clear: true);
+  }
 }

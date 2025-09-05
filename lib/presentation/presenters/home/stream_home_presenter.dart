@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../../data/models/chat/chat.dart';
+import '../../../data/repositories/dify_chat_repository.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/usecases/usecases.dart';
 import '../../../main/services/logger_service.dart';
@@ -10,14 +12,17 @@ class StreamHomePresenter implements HomePresenter {
   final LoadCurrentUser _loadCurrentUserUseCase;
   final SuggestionsPresenter _suggestionsPresenter;
   final LoadConversations _loadConversations;
+  final DeleteConversation _deleteConversation;
 
   StreamHomePresenter({
     required LoadCurrentUser loadCurrentUserUseCase,
     required SuggestionsPresenter suggestionsPresenter,
     required LoadConversations loadConversations,
+    required DeleteConversation deleteConversation,
   })  : _loadCurrentUserUseCase = loadCurrentUserUseCase,
         _suggestionsPresenter = suggestionsPresenter,
-        _loadConversations = loadConversations;
+        _loadConversations = loadConversations,
+        _deleteConversation = deleteConversation;
 
   final StreamController<UserEntity?> _currentUserController =
       StreamController<UserEntity?>.broadcast();
@@ -226,8 +231,6 @@ class StreamHomePresenter implements HomePresenter {
     // Adiciona no início da lista
     _cachedConversations.insert(0, conversation);
     _conversationsController.sink.add(List.from(_cachedConversations));
-
-    refreshConversations();
   }
 
   // Limpa conversas (usado no logout)
@@ -263,14 +266,25 @@ class StreamHomePresenter implements HomePresenter {
 
   // delata conversa
   @override
-  void deleteConversation(String conversationId) {
-    LoggerService.debug(
-      'HomePresenter: Removendo conversa do histórico',
-      name: 'HomePresenter',
-    );
+  Future<void> deleteConversation(String conversationId) async {
+    try {
+      LoggerService.debug(
+        'HomePresenter: Removendo conversa do histórico',
+        name: 'HomePresenter',
+      );
 
-    _cachedConversations.removeWhere((c) => c.id == conversationId);
-    _conversationsController.sink.add(List.from(_cachedConversations));
+      await _deleteConversation.delete(conversationId);
+
+      _cachedConversations.removeWhere((c) => c.id == conversationId);
+      _conversationsController.sink.add(List.from(_cachedConversations));
+    } catch (error) {
+      LoggerService.error(
+        'Erro ao deletar conversa no presenter: $error',
+        name: 'HomePresenter',
+      );
+      await loadConversations();
+      rethrow;
+    }
   }
 
   // Sync periódico a cada 5 minutos
@@ -353,6 +367,41 @@ class StreamHomePresenter implements HomePresenter {
         if (newConversations.isNotEmpty) {
           _cachedConversations.addAll(newConversations);
           _conversationsController.sink.add(List.from(_cachedConversations));
+
+          // Salva no cache do DifyChatRepository
+          try {
+            if (_loadConversations is DifyChatRepository) {
+              final repository = _loadConversations;
+
+              // Carrega cache atual
+              final currentCache =
+                  await repository.loadConversationsFromCache();
+
+              // Adiciona as novas conversas no cache
+              final updatedCache = List<ConversationModel>.from(currentCache);
+              for (final conversation in newConversations) {
+                // Verifica se não já está no cache
+                if (!updatedCache
+                    .any((cached) => cached.id == conversation.id)) {
+                  updatedCache.add(ConversationModel.fromEntity(conversation));
+                }
+              }
+
+              // Salva cache atualizado
+              await repository.saveConversationsToCache(updatedCache);
+
+              LoggerService.debug(
+                'Cache do DifyChatRepository atualizado com ${newConversations.length} conversas paginadas',
+                name: 'HomePresenter',
+              );
+            }
+          } catch (error) {
+            LoggerService.error(
+              'Erro ao atualizar cache do repository: $error',
+              name: 'HomePresenter',
+            );
+            // Não quebra o fluxo, apenas loga o erro
+          }
 
           // Atualiza lastId para próxima paginação
           _lastConversationId = newConversations.last.id;

@@ -10,7 +10,7 @@ import '../models/chat/conversation_model.dart';
 import '../models/chat/message_model.dart';
 import '../services/dify_service.dart';
 
-/// Repository que usa Dify como backend ao invés do Firestore
+// Repository que usa Dify como backend ao invés do Firestore
 class DifyChatRepository
     implements
         LoadConversations,
@@ -19,9 +19,8 @@ class DifyChatRepository
         UpdateConversation,
         DeleteConversation,
         SyncConversations {
-  // REMOVER LoadMessages daqui
   final DifyApiClient difyApiClient;
-  final DifyService difyService; // Para envio de mensagens (já implementado)
+  final DifyService difyService;
   final SharedPreferencesStorageAdapter localStorage;
   final LoadCurrentUser _loadCurrentUser;
 
@@ -36,7 +35,7 @@ class DifyChatRepository
     required LoadCurrentUser loadCurrentUser,
   }) : _loadCurrentUser = loadCurrentUser;
 
-  // LOAD CONVERSATIONS (implementa LoadConversations)
+  // LOAD CONVERSATIONS
   @override
   Future<List<ConversationEntity>> load({
     int limit = 20,
@@ -98,7 +97,7 @@ class DifyChatRepository
     }
   }
 
-  // CREATE CONVERSATION - Versão atualizada para criar após resposta do Dify
+  // CREATE CONVERSATION
   @override
   Future<ConversationEntity> create({
     required String userId,
@@ -110,7 +109,7 @@ class DifyChatRepository
         'Use createConversationFromDifyResponse() após receber resposta do Dify');
   }
 
-  /// Cria conversa após receber resposta do Dify (método novo)
+  // Cria conversa após receber resposta do Dify (método novo)
   Future<ConversationEntity> createConversationFromDifyResponse({
     required String userId,
     required String difyConversationId,
@@ -126,15 +125,15 @@ class DifyChatRepository
 
       // Cria conversa com dados reais do Dify
       final conversationModel = ConversationModel(
-        id: difyConversationId, // Usa ID do Dify
+        id: difyConversationId,
         userId: userId,
-        title: difyTitle, // Usa título gerado pelo Dify
+        title: difyTitle,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
-        messageCount: 2, // User message + assistant response
+        messageCount: 2,
         isActive: true,
         lastMessage: _truncateMessage(difyResponse),
-        messages: [], // Mensagens são gerenciadas separadamente
+        messages: [],
       );
 
       // Atualiza cache local
@@ -155,7 +154,7 @@ class DifyChatRepository
     }
   }
 
-  // SEND MESSAGE (usa DifyService existente)
+  // SEND MESSAGE
   @override
   Future<MessageEntity> send({
     required String conversationId,
@@ -212,8 +211,6 @@ class DifyChatRepository
 
       final model = ConversationModel.fromEntity(conversation);
 
-      // No Dify, não há endpoint para atualizar conversa diretamente
-      // Apenas atualiza o cache local
       await _updateConversationInCache(model);
 
       LoggerService.debug(
@@ -240,13 +237,23 @@ class DifyChatRepository
         name: 'DifyChatRepository',
       );
 
-      // No Dify, não há endpoint para deletar conversas
-      // Remove apenas do cache local
+      final currentUser = await _loadCurrentUser.load();
+      if (currentUser == null) {
+        throw DomainError.accessDenied;
+      }
+
+      await difyApiClient.deleteConversation(
+        conversationId: conversationId,
+        userId: currentUser.id,
+      );
+
       await _removeConversationFromCache(conversationId);
       await _removeMessagesFromCache(conversationId);
 
+      DifyService.clearConversationCache(conversationId);
+
       LoggerService.debug(
-        'Conversa removida do cache: $conversationId',
+        'Conversa removida completamente: $conversationId',
         name: 'DifyChatRepository',
       );
     } catch (error) {
@@ -394,8 +401,6 @@ class DifyChatRepository
     }
   }
 
-  // MÉTODOS PRIVADOS (Cache Management)
-
   Future<List<ConversationModel>> _loadConversationsFromCache() async {
     try {
       final cacheString = await localStorage.fetch(_conversationsKey);
@@ -494,7 +499,7 @@ class DifyChatRepository
 
   Future<bool> _shouldSync() async {
     try {
-      // Verifica se passou do tempo limite (30 minutos)
+      // Verifica se passou do tempo limite
       final lastSyncString = await localStorage.fetch(_lastSyncKey);
       if (lastSyncString == null) return true;
 
@@ -508,16 +513,14 @@ class DifyChatRepository
     }
   }
 
-  // MÉTODOS PÚBLICOS para uso no Presenter e SyncService
-
-  /// Adiciona mensagem ao cache (público para uso no presenter)
+  // Adiciona mensagem ao cache (público para uso no presenter)
   Future<void> addMessageToCache(
       String conversationId, MessageEntity message) async {
     final messageModel = MessageModel.fromEntity(message);
     await _addMessageToCache(conversationId, messageModel);
   }
 
-  /// Adiciona múltiplas mensagens ao cache
+  // Adiciona múltiplas mensagens ao cache
   Future<void> addMessagesToCache(
       String conversationId, List<MessageEntity> messages) async {
     final messageModels =
@@ -525,7 +528,7 @@ class DifyChatRepository
     await _saveMessagesToCache(conversationId, messageModels);
   }
 
-  /// Atualiza conversa no cache (público para uso no presenter)
+  // Atualiza conversa no cache (público para uso no presenter)
   Future<void> updateConversationInCache(
       ConversationEntity conversation) async {
     LoggerService.debug(
@@ -540,24 +543,24 @@ class DifyChatRepository
         name: 'DifyChatRepository');
   }
 
-  /// Salva lista de conversas no cache (público para SyncService)
+  // Salva lista de conversas no cache (público para SyncService)
   Future<void> saveConversationsToCache(
       List<ConversationModel> conversations) async {
     await _saveConversationsToCache(conversations);
   }
 
-  /// Salva mensagens de uma conversa no cache (público para SyncService)
+  // Salva mensagens de uma conversa no cache (público para SyncService)
   Future<void> saveMessagesToCache(
       String conversationId, List<MessageModel> messages) async {
     await _saveMessagesToCache(conversationId, messages);
   }
 
-  /// Carrega conversas do cache (público para SyncService)
+  // Carrega conversas do cache (público para SyncService)
   Future<List<ConversationModel>> loadConversationsFromCache() async {
     return await _loadConversationsFromCache();
   }
 
-  /// Carrega mensagens de uma conversa do cache (público para SyncService)
+  // Carrega mensagens de uma conversa do cache (público para SyncService)
   Future<List<MessageModel>> loadMessagesFromCache(
       String conversationId) async {
     return await _loadMessagesFromCache(conversationId);
@@ -586,8 +589,7 @@ class DifyChatRepository
       await localStorage.delete(_conversationsKey);
       await localStorage.delete(_lastSyncKey);
 
-      // Remove todos os caches de mensagens (mais complexo, mas funcional)
-      // Nota: idealmente teríamos uma lista de conversationIds para limpar
+      // Remove todos os caches de mensagens
       LoggerService.debug(
         'Cache do DifyChatRepository limpo',
         name: 'DifyChatRepository',
@@ -600,13 +602,13 @@ class DifyChatRepository
     }
   }
 
-  /// Helper para truncar mensagem para preview
+  // Helper para truncar mensagem para preview
   String _truncateMessage(String message) {
     if (message.length <= 100) return message;
     return '${message.substring(0, 97)}...';
   }
 
-  /// Atualiza contador de mensagens de uma conversa
+  // Atualiza contador de mensagens de uma conversa
   Future<void> updateMessageCount(String conversationId, int newCount) async {
     try {
       final cached = await _loadConversationsFromCache();
@@ -618,7 +620,7 @@ class DifyChatRepository
           userId: cached[index].userId,
           title: cached[index].title,
           createdAt: cached[index].createdAt,
-          updatedAt: DateTime.now(), // Atualiza timestamp
+          updatedAt: DateTime.now(),
           messageCount: newCount,
           isActive: cached[index].isActive,
           lastMessage: cached[index].lastMessage,
@@ -641,7 +643,7 @@ class DifyChatRepository
     }
   }
 
-  /// Atualiza última mensagem de uma conversa (para preview no drawer)
+  // Atualiza última mensagem de uma conversa (para preview no drawer)
   Future<void> updateLastMessage(
       String conversationId, String lastMessage) async {
     try {
@@ -654,7 +656,7 @@ class DifyChatRepository
           userId: cached[index].userId,
           title: cached[index].title,
           createdAt: cached[index].createdAt,
-          updatedAt: DateTime.now(), // Atualiza timestamp
+          updatedAt: DateTime.now(),
           messageCount: cached[index].messageCount,
           isActive: cached[index].isActive,
           lastMessage: _truncateMessage(lastMessage),

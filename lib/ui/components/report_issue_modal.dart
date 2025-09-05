@@ -2,17 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:seven_chat_app/main/services/logger_service.dart';
 
+import '../../domain/entities/entities.dart';
+import '../../domain/usecases/usecases.dart';
+import '../../main/factories/usecases/feedback/submit_report_factory.dart';
+import '../../main/factories/usecases/user/user.dart';
 import '../../share/utils/app_colors.dart';
 import '../helpers/helpers.dart';
 
 class ReportIssueModal extends StatefulWidget {
   final String messageContent;
   final String messageId;
+  final String conversationId;
+  final String? userQuery;
 
   const ReportIssueModal({
     super.key,
     required this.messageContent,
     required this.messageId,
+    required this.conversationId,
+    this.userQuery,
   });
 
   @override
@@ -25,9 +33,13 @@ class _ReportIssueModalState extends State<ReportIssueModal> {
   bool _isSubmitting = false;
   bool _isComposing = false;
 
+  late final SubmitReport _submitReport;
+
   @override
   void initState() {
     super.initState();
+
+    _submitReport = makeSubmitReport();
 
     _feedbackController.addListener(() {
       final isComposing = _feedbackController.text.trim().isNotEmpty;
@@ -256,8 +268,9 @@ class _ReportIssueModalState extends State<ReportIssueModal> {
             Expanded(
               flex: 1,
               child: ElevatedButton(
-                onPressed:
-                    (_isComposing && !_isSubmitting) ? _submitReport : null,
+                onPressed: (_isComposing && !_isSubmitting)
+                    ? _submitReportAction
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
                       _isComposing ? AppColors.redDanger : AppColors.lightGray,
@@ -295,7 +308,7 @@ class _ReportIssueModalState extends State<ReportIssueModal> {
     );
   }
 
-  Future<void> _submitReport() async {
+  Future<void> _submitReportAction() async {
     if (!_isComposing || _isSubmitting) return;
 
     setState(() {
@@ -305,19 +318,27 @@ class _ReportIssueModalState extends State<ReportIssueModal> {
     try {
       HapticFeedback.lightImpact();
 
-      // TODO: Implementar envio para webhook
-      final reportData = {
-        'messageId': widget.messageId,
-        'messageContent': widget.messageContent,
-        'feedback': _feedbackController.text.trim(),
-        'timestamp': DateTime.now().toIso8601String(),
-        'userId': 'user_id_here', // TODO: Pegar do presenter
-      };
+      final loadCurrentUser = makeFirebaseLoadCurrentUser();
+      final currentUser = await loadCurrentUser.load();
 
-      // Simula envio
-      await Future.delayed(const Duration(seconds: 2));
+      final report = ReportEntity(
+        userId: currentUser?.id ?? 'Anonymous-Mobile',
+        message: widget.messageContent,
+        conversationId: (widget.conversationId.startsWith('temp_'))
+            ? ''
+            : widget.conversationId,
+        userQuery: widget.userQuery ?? '',
+        userFeedback: _feedbackController.text.trim(),
+        messageId: widget.messageId,
+        timestamp: DateTime.now(),
+      );
 
-      LoggerService.debug('Report enviado: $reportData', name: 'ReportIssue');
+      await _submitReport.submit(report);
+
+      LoggerService.debug(
+        'Report enviado com sucesso: ${report.messageId}',
+        name: 'ReportIssue',
+      );
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -338,6 +359,10 @@ class _ReportIssueModalState extends State<ReportIssueModal> {
         );
       }
     } catch (error) {
+      LoggerService.error(
+        'Erro ao enviar report: $error',
+        name: 'ReportIssue',
+      );
       setState(() {
         _isSubmitting = false;
       });

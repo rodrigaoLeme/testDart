@@ -9,11 +9,13 @@ import '../../../helpers/i18n/resources.dart';
 class MessageBubble extends StatelessWidget {
   final MessageEntity message;
   final bool isLastMessage;
+  final String? relatedUserQuery;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.isLastMessage = false,
+    this.relatedUserQuery,
   });
 
   @override
@@ -90,7 +92,7 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else {
-      // ✅ IA: Texto SELECIONÁVEL
+      // Texto SELECIONÁVEL
       return SelectableText(
         message.content,
         style: const TextStyle(
@@ -229,6 +231,8 @@ class MessageBubble extends StatelessWidget {
       builder: (context) => ReportIssueModal(
         messageContent: message.content,
         messageId: message.id,
+        conversationId: message.conversationId,
+        userQuery: relatedUserQuery,
       ),
     );
   }

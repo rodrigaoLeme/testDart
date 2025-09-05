@@ -29,6 +29,23 @@ class Us implements Translation {
       'Feedback sent successfully! Thank you for helping us improve.';
   @override
   String get feedbackError => 'Error sending feedback. Please try again.';
+  @override
+  String get msgSureDeleteConversation =>
+      'Are you sure you want to delete the conversation?';
+  @override
+  String get msgActionCannotBeUndone => 'This action cannot be undone.';
+  @override
+  String get msgDeletingConversation => 'Deleting conversation...';
+  @override
+  String get conversationDeletedSuccessfully =>
+      'Conversation deleted successfully';
+  @override
+  String get errorDeletingConversation => 'Error deleting conversation';
+  @override
+  String get whatsAppNotAvailable => 'WhatsApp not available';
+  @override
+  String get unableToOpenWhatsApp =>
+      'Unable to open WhatsApp. Check if the app is installed.';
 
   //BUTTON
   @override
@@ -41,6 +58,8 @@ class Us implements Translation {
   String get loginBtn => 'Login';
   @override
   String get submit => 'Submit';
+  @override
+  String get delete => 'Delete';
 
   // SHARED
   @override
@@ -81,6 +100,10 @@ class Us implements Translation {
       'Ex: The answer is incorrect, does not answer the question, outdated information...';
   @override
   String get thinking => 'Thinking';
+  @override
+  String get deleteConversation => 'Delete conversation';
+  @override
+  String get hopeBot => 'Hope';
 
   //PAGES
   @override
